@@ -305,9 +305,9 @@ G.board = (function () {
 
   /**
    * 수입 지급. BANK 가 있으면 일부를 금고로 돌린다.
-   * @param silent  숫자 팝업 없이
+   * 화면에 숫자를 띄우는 것은 부르는 쪽 몫이다 (여기서도 띄우면 두 번 겹친다).
    */
-  function earn(amount, at, silent) {
+  function earn(amount) {
     if (amount <= 0) return;
     var banks = [];
     for (var i = 0; i < ents.length; i++) {
@@ -321,7 +321,6 @@ G.board = (function () {
     }
     G.state.money += amount;
     G.state.totalEarned = (G.state.totalEarned || 0) + amount;
-    if (!silent && at) G.ui.floatMoney(at.x, at.y, amount);
   }
 
   function spend(amount) {

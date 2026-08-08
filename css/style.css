@@ -17,6 +17,7 @@
   --shadow-m:  0 2px 6px rgba(40,36,30,.12), 0 8px 20px rgba(40,36,30,.10);
   --shadow-l:  0 8px 20px rgba(40,36,30,.16), 0 20px 44px rgba(40,36,30,.14);
   --r:         12px;
+  --codex-w:   330px;
   --font:      "Inter", "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI",
                "Malgun Gothic", Roboto, sans-serif;
 }
@@ -112,20 +113,6 @@ button{
 #snaphint.waiting .sh-p{ background:var(--ink-3); }
 
 /* 보드 밖으로 끌어냈을 때 */
-#sellChip{
-  position:absolute; z-index:60; pointer-events:none;
-  transform:translate(-50%,-50%) scale(.94);
-  display:flex; flex-direction:column; align-items:center; gap:1px;
-  padding:6px 13px; border-radius:12px;
-  background:rgba(44,42,39,.92); color:#f7f5f1;
-  box-shadow:var(--shadow-m);
-  opacity:0; transition:opacity .14s, transform .14s;
-  white-space:nowrap;
-}
-#sellChip.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
-#sellChip .sell-t{ font-size:12px; font-weight:750; letter-spacing:.06em; }
-#sellChip .sell-c{ font-size:10px; opacity:.72; font-variant-numeric:tabular-nums; }
-
 /* 판매 대기 중인 글자 */
 .ent.selling .body{ opacity:.5; }
 .ent.selling .ch{ text-decoration:line-through; }
@@ -290,7 +277,7 @@ button{
 #gauge{
   position:absolute; z-index:30;
   left:50%; top:16px; transform:translateX(-50%);
-  width:220px; text-align:center; cursor:pointer;
+  width:300px; text-align:center; cursor:pointer;
   padding:6px 4px 2px; border-radius:10px;
   transition:background .16s;
 }
@@ -311,22 +298,40 @@ button{
   letter-spacing:.02em; font-variant-numeric:tabular-nums;
 }
 
+/* 재화: 숫자는 크고 진하게, 단위 w 는 조금 작고 연하게 */
 #money{
-  position:absolute; z-index:30; right:18px; top:14px;
-  font-size:17px; font-weight:700; color:var(--ink);
+  position:absolute; z-index:30; right:62px; top:11px;
+  display:flex; align-items:baseline; gap:2px;
   font-variant-numeric:tabular-nums; letter-spacing:.01em;
+  user-select:none;
 }
-#money.bump{ animation:bump .3s ease-out; }
+#money .m-v{
+  display:inline-block; transform-origin:right bottom;
+  font-size:28px; font-weight:750; color:var(--ink);
+}
+#money .m-u{ font-size:16px; font-weight:600; color:var(--ink-3); }
+#money.bump .m-v{ animation:bump .3s ease-out; }
 @keyframes bump{ 50%{ transform:scale(1.09); color:var(--money); } }
+
+/* 일시정지 = 설정 (재화 오른쪽) */
+#pauseBtn{
+  position:absolute; z-index:30; right:14px; top:13px;
+  width:40px; height:40px; border-radius:12px;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--ink-3);
+  transition:color .15s, background .15s;
+}
+#pauseBtn svg{ width:27px; height:27px; display:block; }
+#pauseBtn:hover{ color:var(--ink); background:rgba(255,255,255,.7); }
 
 .float-money{
   position:absolute; z-index:40; pointer-events:none;
-  font-size:12px; font-weight:700; color:var(--money);
+  font-size:15px; font-weight:750; color:var(--money);
   text-shadow:0 1px 0 rgba(255,255,255,.9);
   animation:floatUp 1.1s ease-out forwards;
   font-variant-numeric:tabular-nums;
 }
-.float-money.small{ font-size:10px; font-weight:600; opacity:.62; }
+.float-money.small{ font-size:12.5px; font-weight:650; opacity:.62; }
 @keyframes floatUp{
   0%{ opacity:0; transform:translateY(4px); }
   20%{ opacity:1; }
@@ -396,34 +401,40 @@ button{
    도감
    -------------------------------------------------------------------------- */
 
+/* 서랍 손잡이. 세로 선을 끌면 도감이 따라 열린다 */
 #codexTab{
-  position:absolute; z-index:40; left:0; top:50%;
-  transform:translateY(-50%);
-  padding:14px 7px 14px 5px;
-  background:rgba(253,252,250,.95);
-  border:1px solid var(--line-2); border-left:none;
-  border-radius:0 10px 10px 0;
-  box-shadow:var(--shadow-s);
-  cursor:pointer; user-select:none;
-  display:flex; flex-direction:column; align-items:center; gap:7px;
-  font-size:10.5px; color:var(--ink-2);
-  transition:padding-right .16s, color .16s;
+  position:absolute; z-index:51; left:0; top:50%;
+  width:34px; height:190px;
+  display:flex; align-items:center; padding-left:9px;
+  cursor:grab; user-select:none; touch-action:none;
+  transform:translate(0,-50%);
+  transition:transform .32s cubic-bezier(.2,.8,.25,1);
 }
-#codexTab:hover{ padding-right:11px; color:var(--ink); }
-#codexTab .arrow{ font-size:8px; color:var(--ink-3); }
-#codexTab .lbl{ writing-mode:vertical-rl; letter-spacing:.16em; }
-#codexTab.open{ opacity:0; pointer-events:none; }
+#codexTab::after{
+  content:'';
+  width:4px; height:130px;
+  border-radius:99px;
+  background:var(--ink-3);
+  box-shadow:0 1px 3px rgba(40,36,30,.14);
+  transition:width .18s, height .18s, background .18s;
+}
+#codexTab:hover::after{ width:5px; height:158px; background:var(--ink-2); }
+#codexTab:active{ cursor:grabbing; }
+#codexTab:active::after{ background:var(--ink); }
+#codexTab.open{ transform:translate(var(--codex-w),-50%); }
+#codexTab.dragging{ transition:none; }
 
 #codex{
-  position:absolute; z-index:50; left:0; top:0; bottom:0; width:330px;
+  position:absolute; z-index:50; left:0; top:0; bottom:0; width:var(--codex-w);
   background:rgba(250,248,244,.985);
   border-right:1px solid var(--line-2);
   box-shadow:6px 0 30px rgba(40,36,30,.08);
-  transform:translateX(-101%);
+  transform:translateX(-100%);
   transition:transform .32s cubic-bezier(.2,.8,.25,1);
   display:flex; flex-direction:column;
 }
 #codex.open{ transform:none; }
+#codex.dragging{ transition:none; }
 #codex header{
   display:flex; align-items:baseline; gap:10px;
   padding:20px 20px 12px;
@@ -452,6 +463,8 @@ button{
 .cx .n{ font-size:14px; font-weight:750; letter-spacing:.07em; color:var(--ink); }
 .cx .k{ font-size:10px; color:var(--ink-3); letter-spacing:.05em; }
 .cx .d{ font-size:11.5px; color:var(--ink-2); line-height:1.5; margin-top:3px; }
+/* 설명에 나오지만 아직 못 찾은 단어 */
+.cx .d .q{ font-style:normal; color:var(--ink-3); letter-spacing:.12em; }
 .cx.locked .n{ color:var(--ink-3); font-weight:600; letter-spacing:.14em; }
 .cx.locked .dot{ background:#e4e0d9; }
 .cx .hintbtn{
@@ -466,16 +479,6 @@ button{
 /* --------------------------------------------------------------------------
    일시정지 / 토스트 / 인트로
    -------------------------------------------------------------------------- */
-
-#pauseBtn{
-  position:absolute; z-index:40; right:18px; bottom:16px;
-  width:30px; height:30px; border-radius:9px;
-  font-size:12px; color:var(--ink-3);
-  background:rgba(253,252,250,.9); border:1px solid var(--line);
-  display:flex; align-items:center; justify-content:center;
-  transition:color .15s, border-color .15s;
-}
-#pauseBtn:hover{ color:var(--ink); border-color:var(--line-2); }
 
 #pauseVeil{
   position:absolute; inset:0; z-index:80;
@@ -495,6 +498,27 @@ button{
   transition:color .15s, background .15s;
 }
 .veil-inner button:hover{ color:var(--ink); background:rgba(255,255,255,.7); }
+
+/* 방치 — 일시정지보다 옅게 덮는다. 클릭은 그대로 통과시켜 아무 데나 눌러 깨울 수 있게 */
+#idleVeil{
+  position:absolute; inset:0; z-index:78;
+  background:rgba(246,244,240,.62);
+  backdrop-filter:blur(1.5px);
+  display:flex; align-items:center; justify-content:center;
+  pointer-events:none;
+  animation:popIn .5s ease-out;
+}
+#idleVeil h1{
+  margin:0 0 14px; font-size:22px; font-weight:750;
+  letter-spacing:.3em; color:var(--ink-3);
+  animation:breathe 3.4s ease-in-out infinite;
+}
+#idleVeil .tiny{ margin:3px 0; color:var(--ink-3); }
+@keyframes breathe{
+  0%,100%{ opacity:.45; }
+  50%{ opacity:.95; }
+}
+
 #settings{
   margin-top:18px; padding-top:16px; border-top:1px solid var(--line);
   font-size:12px; color:var(--ink-2);
@@ -532,6 +556,6 @@ button{
 #intro p{ margin:2px 0; }
 
 @media (max-width:720px){
-  #codex{ width:82vw; }
-  #gauge{ width:170px; }
+  :root{ --codex-w:82vw; }
+  #gauge{ width:220px; }
 }

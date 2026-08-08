@@ -14,14 +14,12 @@ G.drag = (function () {
   var snap = null;         // {target, side, x, y, armed}
   var holdT = 0;           // 같은 단어에 대고 있은 시간
   var outside = false;     // 보드 밖 = 판매 대기
-  var lastClient = { x: 0, y: 0 };
-  var snapEl, hintEl, sellEl, playEl;
+  var snapEl, hintEl, playEl;
 
   function init() {
     playEl = document.getElementById('play');
     snapEl = document.getElementById('snapline');
     hintEl = document.getElementById('snaphint');
-    sellEl = document.getElementById('sellChip');
     var layer = document.getElementById('layer');
 
     layer.addEventListener('pointerdown', onDown);
@@ -64,7 +62,6 @@ G.drag = (function () {
     offX = e.x - p.x;
     offY = e.y - p.y;
     rawX = e.x; rawY = e.y;
-    lastClient.x = ev.clientX; lastClient.y = ev.clientY;
 
     e.dragging = true;
     e.jump = null;
@@ -81,7 +78,6 @@ G.drag = (function () {
     var nx = p.x + offX, ny = p.y + offY;
     if (Math.abs(nx - rawX) > 1 || Math.abs(ny - rawY) > 1) moved = true;
     rawX = nx; rawY = ny;
-    lastClient.x = ev.clientX; lastClient.y = ev.clientY;
     applyPosition();
   }
 
@@ -97,6 +93,7 @@ G.drag = (function () {
     var outDist = Math.sqrt(outX * outX + outY * outY);
 
     outside = sellable(cur) && outDist > C.SELL_MARGIN;
+    cur.el.classList.toggle('selling', outside);
 
     if (outDist > 0.5) {
       /* 경계를 넘어선 만큼은 일부만 따라온다 — 끌어낼 때 손에 걸리는 느낌 */
@@ -106,7 +103,6 @@ G.drag = (function () {
       cur.y = inside.y + outY * k;
       clearSnap();
       cur.render();
-      paintSell();
       return;
     }
 
@@ -120,15 +116,10 @@ G.drag = (function () {
     cur.x = c.x; cur.y = c.y;
     cur.render();
     paintSnap();
-    paintSell();
   }
 
   /** 단어는 실수로 팔리면 아까우니 낱글자·덩어리만 판매 대상 */
   function sellable(e) { return e && e.type !== 'word'; }
-
-  function sellValue(e) {
-    return Math.max(1, e.text.length * C.PAY_BASE);
-  }
 
   /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이려면 시간이 걸린다 */
   function tick(dt) {
@@ -148,13 +139,12 @@ G.drag = (function () {
     if (!cur) return;
     var e = cur;
     e.dragging = false;
-    e.el.classList.remove('drag');
+    e.el.classList.remove('drag', 'selling');
     e.resetJumpTimer();
 
     var s = snap;
     var wasOutside = outside;
     clearSnap();
-    hideSell();
     cur = null;
     outside = false;
 
@@ -174,38 +164,13 @@ G.drag = (function () {
   }
 
   /* ------------------------------------------------------------------
-     판매 — 보드 밖으로 끌어내 놓으면 팔린다
+     판매 — 보드 밖으로 끌어내 놓으면 조용히 버려진다
+     재화는 주지 않고, 남은 생성 쿨다운만 당겨 준다.
      ------------------------------------------------------------------ */
   function sell(e) {
-    var v = sellValue(e);
-    var x = e.x, y = e.y;
     G.board.remove(e);
-    G.board.earn(v);
-    G.ui.floatMoney(U.clamp(x, 0, G.board.size().w), U.clamp(y, 0, G.board.size().h), v);
-    G.fx.coins(U.clamp(x, 10, G.board.size().w - 10), U.clamp(y, 10, G.board.size().h - 10), 8);
-
-    /* 남은 생성 쿨다운 절반 */
-    var before = G.state.spawnTimer;
-    G.state.spawnTimer = before * C.SELL_COOLDOWN_CUT;
-    G.ui.toast('판매 · 다음 글자 ' + Math.max(0, Math.round(before - G.state.spawnTimer)) + '초 당김');
+    G.state.spawnTimer *= C.SELL_COOLDOWN_CUT;
     G.ui.pulseGauge();
-  }
-
-  function paintSell() {
-    if (!cur || !sellEl) return;
-    if (!outside) { hideSell(); return; }
-    sellEl.querySelector('.sell-t').textContent = cur.text + ' 판매';
-    sellEl.querySelector('.sell-c').textContent =
-      '+' + U.money(sellValue(cur)) + ' · 쿨다운 -50%';
-    sellEl.style.left = lastClient.x + 'px';
-    sellEl.style.top = (lastClient.y - 46) + 'px';
-    sellEl.classList.add('show');
-    cur.el.classList.add('selling');
-  }
-
-  function hideSell() {
-    if (sellEl) sellEl.classList.remove('show');
-    if (cur && cur.el) cur.el.classList.remove('selling');
   }
 
   function onDblClick(ev) {
@@ -317,7 +282,7 @@ G.drag = (function () {
     snapEl.classList.toggle('good', !!kind && ready);
     if (kind) {
       var def = G.defFor(text);
-      hintEl.querySelector('.sh-t').textContent = text + '  +' + def.value;
+      hintEl.querySelector('.sh-t').textContent = text + '  +' + U.money(def.value);
       hintEl.classList.toggle('ability', kind === 'ability');
       hintEl.classList.toggle('waiting', !ready);
       hintEl.style.color = (kind === 'ability' && ready) ? def.color.fg : '';
@@ -401,7 +366,6 @@ G.drag = (function () {
   }
 
   function cancel() {
-    hideSell();
     if (cur) {
       cur.dragging = false;
       cur.el.classList.remove('drag', 'selling');

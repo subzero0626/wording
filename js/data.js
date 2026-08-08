@@ -1,20 +1,26 @@
 /* ==========================================================================
-   data.js — 밸런스 상수 + 능력 단어 30개 정의
+   data.js — 밸런스 상수 + 능력 단어 40개 정의
    --------------------------------------------------------------------------
-   사전(dict.js)에 있는 8만여 개 단어는 전부 만들 수 있고 재화를 번다.
-   그중 아래 30개만 특별한 "능력"을 가진다.
+   사전(dict.js)에 있는 6만여 개 단어는 전부 만들 수 있고 재화를 번다.
+   그중 아래 40개만 특별한 "능력"을 가진다.
 
    새 능력 단어를 추가하려면 WORDS 에 항목 하나를 추가하면 된다.
    { id, kind, desc, hint, color, anim, fx, pay, motion, tags,
      flammable, heavy, ghost, act, actEvery, bonds }
 
-   pay      : 재화 배수. 실제 지급액 = round(1.5^글자수 × pay)
+   pay      : 옛 재화 배수. 지금은 쓰지 않는다 — 능력 단어도 보통 단어와 똑같이
+              글자 수로만 벌이가 정해진다. 값은 되살릴 때를 위해 남겨 두었다.
    act      : behaviors.js 의 ACTIONS[key] 에 대응하는 주기 행동
    bonds    : "가까이 + 일정 시간" 유지되어야 발동하는 상호작용
               { with, range, time, key }  →  behaviors.js 의 BONDS[key]
               with 는 단어 id 배열 또는 '#tag' 또는 '@letter'
    ========================================================================== */
 var G = window.G || (window.G = {});
+
+/* 테스트용 스위치 — 켜면 도감이 전부 열린 것처럼 보인다.
+   보여주기만 하는 것이라 실제 발견 기록에는 손대지 않는다. false 로 되돌리면
+   원래 진행 상황이 그대로 돌아온다. */
+G.TEST_UNLOCK_ALL = false;
 
 G.C = {
   /* --- 오브젝트 크기 근사식 (실제 값은 DOM 에서 측정한다) --- */
@@ -29,16 +35,24 @@ G.C = {
   PAY_GROWTH: 2,         // 글자가 하나 늘 때마다 곱해지는 값
   MIN_WORD_LEN: 3,       // 이보다 짧으면 단어가 되지 않는다
 
-  /* --- 글자 생성 --- */
+  /* --- 글자 생성 ---
+     초반은 싸게 시작해서 뒤로 갈수록 배율이 커진다 (×2.1 → ×2.45) */
   SPAWN_STEPS: [45, 41, 37, 34, 31, 28, 25, 23, 21, 19, 18],
-  SPAWN_COSTS: [120, 260, 520, 1000, 1900, 3500, 6500, 12000, 22000, 40000],
+  SPAWN_COSTS: [80, 170, 360, 780, 1700, 3800, 8600, 20000, 47000, 115000],
 
   /* --- 보드 확장 (available 영역 대비 비율) --- */
   EXPAND_SCALE: [0.40, 0.46, 0.53, 0.60, 0.68, 0.77, 0.87],
-  EXPAND_COSTS: [150, 450, 1200, 3200, 8500, 22000],
+  EXPAND_COSTS: [100, 300, 950, 3200, 12000, 46000],
 
-  OFFLINE_CAP: 120,      // 오프라인 수입 인정 최대 초
-  OFFLINE_RATE: 0.5,
+  /* --- 도감 힌트 (1단계: 첫 글자+분류, 2단계: 짧은 설명) ---
+     아래는 첫 힌트 값이고, 많이 살수록 HINT_STEP 만큼 비싸진다 */
+  HINT_COSTS: [100, 500],
+  HINT_STEP: 1.10,
+  HINT_STEP_CAP: 20,
+
+  OFFLINE_CAP: 7200,     // 오프라인 수입 인정 최대 초 (2시간)
+  OFFLINE_RATE: 0.1,     // 그동안 벌었을 액수의 이 비율만 준다
+  IDLE_AFTER: 300,       // 이만큼 손대지 않으면 켜 둔 채로도 방치로 넘어간다 (5분)
 
   /* --- 움직임 --- */
   LETTER_JUMP: [15, 30],
@@ -67,8 +81,19 @@ G.C = {
  * 단어가 한 번에 버는 재화.
  * 3글자를 기본 4 로 두고, 글자가 하나 늘 때마다 2배.
  *   3글자 4 · 4글자 8 · 5글자 16 · 6글자 32 · 7글자 64 · 8글자 128
- * 능력 단어는 여기에 각자의 배수(pay)가 곱해진다.
+ * 능력 단어도 보통 단어와 똑같은 값을 받는다. 능력은 벌이가 아니라 행동으로 드러낸다.
  */
+/**
+ * 힌트 값. 처음 몇 개는 싸게 풀어 주지만, 도감을 힌트로만 밀어붙이면 가파르게 비싸진다.
+ * 값은 지금까지 산 힌트 총 개수를 따라간다 — 후반에 남아도는 재화를 흡수하는 자리.
+ */
+G.hintCost = function (lv) {
+  var bought = 0, h = G.state && G.state.hints;
+  for (var k in h) bought += h[k];
+  var step = Math.min(G.C.HINT_STEP_CAP, Math.pow(G.C.HINT_STEP, bought));
+  return Math.round(G.C.HINT_COSTS[lv] * step);
+};
+
 G.wordValue = function (len, mult) {
   if (len < G.C.MIN_WORD_LEN) return 0;
   var v = G.C.PAY_WORD_BASE
@@ -78,7 +103,7 @@ G.wordValue = function (len, mult) {
 };
 
 /* ==========================================================================
-   능력 단어 30개
+   능력 단어 40개
    ========================================================================== */
 G.WORDS = [
 
@@ -145,6 +170,48 @@ G.WORDS = [
     motion: { min: 40, max: 72, range: 30 },
     flammable: true,
     act: 'tree', actEvery: [32, 46]
+  },
+  {
+    id: 'SEED', kind: '자연', tags: ['burnable', 'plant'],
+    desc: '가만히 있다가 시간이 지나면 싹을 틔워 TREE 가 된다. 물이 가까우면 훨씬 빨리 자란다.',
+    hint: '심으면 자란다',
+    color: { fg: '#5f7a34', bd: '#c6daa4' },
+    anim: 'pulse', fx: null, pay: 0.5,
+    motion: null, flammable: true
+  },
+  {
+    id: 'RIVER', kind: '장소', tags: ['wet'],
+    desc: '가만히 흐른다. 주변의 불을 넉넉히 꺼 주고, FISH 가 살기에 가장 좋은 곳이며 TREE 를 잘 자라게 한다.',
+    hint: '흐르는 물',
+    color: { fg: '#2f6b8f', bd: '#a8cbe0' },
+    anim: 'wave', fx: 'drop', pay: 1.4,
+    motion: null, heavy: true
+  },
+  {
+    id: 'STORM', kind: '자연', tags: ['wet'],
+    desc: '몰아친다. 주변을 세게 밀어내면서 동시에 비를 뿌려 불을 끈다. WIND 와 RAIN 을 합친 것.',
+    hint: '몰아친다',
+    color: { fg: '#46526b', bd: '#b4bcd0' },
+    anim: 'shake', fx: 'rain', pay: 1.6,
+    motion: { min: 10, max: 18, range: 112 },
+    act: 'storm', actEvery: [20, 32]
+  },
+  {
+    id: 'MOON', kind: '자연', tags: [],
+    desc: '주변을 밤처럼 잠재운다. 곁에 있는 것들은 뛰지 않고 조용히 더 많이 벌어들인다. SUN 이 가까우면 빛을 잃는다.',
+    hint: '밤에 뜬다',
+    color: { fg: '#5a5f86', bd: '#c3c7e2' },
+    anim: 'float', fx: 'wisp', pay: 2.2,
+    motion: null
+  },
+  {
+    id: 'STAR', kind: '자연', tags: [],
+    desc: '가만히 반짝인다. 가까운 LUCK 을 더 자주 일어나게 하고, 가끔 소원을 들어준다.',
+    hint: '반짝이고 멀다',
+    color: { fg: '#8a7a2e', bd: '#e6dca0' },
+    anim: 'pulse', fx: 'sparkle', pay: 2.0,
+    motion: null,
+    act: 'star', actEvery: [30, 46]
   },
 
   /* ---------- 사물 / 장소 ---------- */
@@ -233,17 +300,38 @@ G.WORDS = [
     anim: 'float', fx: 'ripple', pay: 1.4,
     motion: { min: 45, max: 75, range: 30 }
   },
+  {
+    id: 'LAMP', kind: '사물', tags: ['metal'],
+    desc: '주위를 밝힌다. 곁에 있는 단어들이 조금 더 벌고, GHOST 는 빛을 견디지 못해 멀리 달아난다.',
+    hint: '어둠을 밝힌다',
+    color: { fg: '#8a6a2c', bd: '#e0cb96' },
+    anim: 'pulse', fx: 'ray', pay: 1.2,
+    motion: null,
+    bonds: [{ with: ['GHOST'], range: 118, time: 6, key: 'banish' }]
+  },
+  {
+    id: 'NEST', kind: '장소', tags: ['burnable'],
+    desc: 'BIRD 가 앉으면 자리를 잡고 얌전히 벌며, 가끔 EGG 를 하나 남긴다. 불에 잘 탄다.',
+    hint: '새가 앉는 곳',
+    color: { fg: '#8a6a45', bd: '#ddc8a6' },
+    anim: 'still', fx: null, pay: 1.0,
+    motion: null, heavy: true, flammable: true,
+    act: 'nest', actEvery: [40, 58]
+  },
 
   /* ---------- 동물 ---------- */
   {
     id: 'CAT', kind: '동물', tags: ['animal'],
-    desc: '자주 통통 뛰어다니고, 착지하면서 근처 낱글자를 툭 밀어버린다. MILK 옆에서는 얌전해진다.',
+    desc: '자주 통통 뛰어다니고, 착지하면서 근처 낱글자를 툭 밀어버린다. MILK 옆에서는 얌전해지고, MOUSE 를 보면 잡는다.',
     hint: '야옹',
     color: { fg: '#7c6a55', bd: '#d8cbb9' },
     anim: 'hop', fx: null, pay: 1.6,
     motion: { min: 5, max: 11, range: 118 },
     act: 'cat', actEvery: [6, 12],
-    bonds: [{ with: ['MILK'], range: 88, time: 6, key: 'purr' }]
+    bonds: [
+      { with: ['MILK'], range: 88, time: 6, key: 'purr' },
+      { with: ['MOUSE'], range: 104, time: 4, key: 'hunt' }
+    ]
   },
   {
     id: 'DOG', kind: '동물', tags: ['animal'],
@@ -257,7 +345,7 @@ G.WORDS = [
   },
   {
     id: 'BIRD', kind: '동물', tags: ['animal'],
-    desc: '쉴 새 없이 날아다닌다. TREE 가 가까우면 둥지를 틀고 얌전히 벌이를 한다. BUG 를 잡아먹는다.',
+    desc: '쉴 새 없이 날아다닌다. NEST 나 TREE 가 가까우면 자리를 잡고 얌전히 벌이를 한다. BUG 를 잡아먹는다.',
     hint: '난다',
     color: { fg: '#3c7f95', bd: '#a9d3de' },
     anim: 'float', fx: null, pay: 1.5,
@@ -266,7 +354,7 @@ G.WORDS = [
   },
   {
     id: 'FISH', kind: '동물', tags: ['animal'],
-    desc: 'WATER 나 RAIN 근처에서는 편안히 헤엄치며 잘 벌지만, 물이 없으면 파닥거리기만 한다.',
+    desc: 'RIVER · WATER · RAIN 근처에서는 편안히 헤엄치며 잘 벌지만, 물이 없으면 파닥거리기만 한다.',
     hint: '헤엄친다',
     color: { fg: '#2b7f7a', bd: '#a5d8d4' },
     anim: 'wave', fx: null, pay: 0.7,
@@ -289,6 +377,26 @@ G.WORDS = [
     anim: 'still', fx: null, pay: 0.4,
     motion: null
   },
+  {
+    id: 'MOUSE', kind: '동물', tags: ['animal'],
+    desc: '쉴 새 없이 돌아다니며 돈을 조금씩 축낸다. CHEESE 옆에서는 얌전해져 오히려 잘 벌고, CAT 이 보면 잡힌다.',
+    hint: '작고 빠르다',
+    color: { fg: '#7a7269', bd: '#d6d0c7' },
+    anim: 'shake', fx: null, pay: 0.6,
+    motion: { min: 5, max: 10, range: 112 },
+    act: 'mouse', actEvery: [7, 13],
+    bonds: [{ with: ['CHEESE'], range: 92, time: 10, key: 'nibble' }]
+  },
+  {
+    id: 'BEE', kind: '동물', tags: ['animal'],
+    desc: 'TREE 나 SEED 가 가까우면 꿀을 모아 훨씬 잘 번다. 가끔 나무를 수분시켜 글자를 떨어뜨리게 한다.',
+    hint: '윙윙거린다',
+    color: { fg: '#8a6a12', bd: '#e6cf86' },
+    anim: 'shake', fx: null, pay: 0.8,
+    motion: { min: 4, max: 9, range: 124 },
+    act: 'bee', actEvery: [16, 26],
+    bonds: [{ with: ['TREE'], range: 100, time: 12, key: 'pollen' }]
+  },
 
   /* ---------- 먹이 / 경제 ---------- */
   {
@@ -305,6 +413,14 @@ G.WORDS = [
     hint: '개가 좋아한다',
     color: { fg: '#8b857a', bd: '#dcd6c9' },
     anim: 'still', fx: null, pay: 0.6,
+    motion: null
+  },
+  {
+    id: 'CHEESE', kind: '사물', tags: [],
+    desc: 'MOUSE 를 천천히 끌어당겨 붙잡아 둔다. 생쥐가 오래 갉으면 그 값을 챙길 수 있다.',
+    hint: '생쥐가 좋아한다',
+    color: { fg: '#a08427', bd: '#ecd894' },
+    anim: 'still', fx: null, pay: 0.9,
     motion: null
   },
   {
@@ -360,7 +476,7 @@ G.WORDS = [
 G.WORD_BY_ID = {};
 G.WORDS.forEach(function (w) {
   G.WORD_BY_ID[w.id] = w;
-  w.value = G.wordValue(w.id.length, w.pay);
+  w.value = G.wordValue(w.id.length);
 });
 
 /** 능력이 없는 보통 단어의 정의 (한 단어당 하나만 만들어 재사용) */
@@ -372,7 +488,7 @@ G.plainDef = function (text) {
   d = {
     id: text, plain: true, kind: '보통 단어',
     desc: text.length + '글자 단어. 특별한 능력은 없지만 ' +
-      G.C.PAY_PERIOD + '초마다 ' + v + ' 을 벌어 온다.',
+      G.C.PAY_PERIOD + '초마다 ' + G.util.money(v) + ' 을 벌어 온다.',
     hint: '', tags: [],
     color: { fg: '#17150f', bd: '#cfcac1' },
     anim: null, fx: null, pay: 1, value: v,

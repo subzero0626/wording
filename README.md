@@ -14,12 +14,16 @@
 | 낱글자 | 1 |
 | 아직 단어가 아닌 덩어리 | 글자 수 × 1 |
 | 사전에 있는 보통 단어 | `4 × 2 ^ (글자수 - 3)` |
-| 능력 단어 30개 | 위 값 × 각자의 배수 |
+| 능력 단어 40개 | 위와 같다 |
 
 | 글자수 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|
 | 단어 | **4** | **8** | **16** | **32** | **64** | **128** |
 | 그냥 낱글자로 두면 | 3 | 4 | 5 | 6 | 7 | 8 |
+
+능력 단어도 보통 단어와 똑같이 글자 수로만 벌이가 정해진다.
+능력은 벌이가 아니라 행동으로 드러낸다. 다만 상황에 따른 보너스는 그대로다
+(GOLD 는 BANK 곁에서, FISH 는 물가에서 더 번다).
 
 단어로 만들기만 해도 이득이고, 길수록 격차가 폭발적으로 벌어진다.
 **긴 단어를 만드는 것이 곧 성장**이다. 자리도 훨씬 덜 차지한다.
@@ -30,7 +34,7 @@
 
 영어 단어 **65,014개**(3~8글자)가 게임에 들어 있다.
 사전에 있는 단어라면 무엇이든 만들 수 있고 전부 재화를 번다.
-그중 30개만 특별한 능력을 가진다.
+그중 40개만 특별한 능력을 가진다.
 
 - 표제어 출처: [ENABLE word list](https://norvig.com/ngrams/enable1.txt) (public domain)
 - **순수 소문자 알파벳 단어만** — 고유명사·약어·숫자 섞인 문자열은 전부 제외.
@@ -53,14 +57,14 @@ CATS   명사
 CAT 의 변화형
 고양이
 feline mammal usually having thick soft fur and no ability to roar
-20초마다 $8                                              [분해]
+20초마다 8w                                              [분해]
 ```
 
 - 영어 뜻: [WordNet 3.1](https://wordnet.princeton.edu/) (Princeton) + Webster's 1913 (public domain)
   — 사전에 있는 **모든 단어**에 있다.
 - 한글 뜻: [kengdic](https://github.com/garfieldnate/kengdic) 한영사전을 영→한으로 뒤집은 것
   — **약 66%** 의 단어에 있다. 없으면 영어 뜻만 나온다.
-  능력 단어 30개는 직접 확인해 지정했다 (`scratchpad/ko-build.js` 의 `OVERRIDE`).
+  능력 단어는 직접 확인해 지정했다 (`scratchpad/ko-build.js` 의 `OVERRIDE`).
 - 뜻 데이터는 4.6MB라 한꺼번에 들고 있지 않고, **첫 글자 파일(`js/defs/A.js` … `Z.js`)만 그때그때** 불러온다.
 - `fetch` 가 아니라 `<script>` 태그로 불러오므로 `file://` 로 열어도 동작한다.
 
@@ -72,7 +76,7 @@ feline mammal usually having thick soft fur and no ability to roar
 |---|---|
 | 낱글자 · 아직 단어가 아닌 덩어리 | 회색 |
 | 사전에 있는 보통 단어 | 검은색 |
-| 능력 단어 30개 | 각자의 의미에 맞는 색 (FIRE 주황, WATER 파랑 …) |
+| 능력 단어 40개 | 각자의 의미에 맞는 색 (FIRE 주황, WATER 파랑 …) |
 
 ## 실행
 
@@ -88,6 +92,17 @@ python -m http.server 8765
 
 진행 상황은 localStorage 에 자동 저장된다 (약 6초마다 + 탭을 떠날 때).
 
+보드는 두 경우에 통째로 잠든다 — **글자도 생기지 않고** 단어도 움직이지 않는다.
+
+- 탭을 떠나거나 창이 가려졌을 때
+- 페이지를 켜 둔 채로 **5분 동안 아무 조작이 없을 때** (`IDLE_AFTER`)
+
+뒤쪽은 화면을 옅게 덮어 잠들었다는 것을 알려 주고, 마우스를 움직이거나
+아무 곳이나 누르면 곧바로 깨어난다.
+
+잠들어 있던 동안 **벌었을 액수의 10%** 를 깨어날 때 받는다 (최대 2시간까지 인정).
+켜 두고 들여다보는 쪽이 언제나 이득이다.
+
 ## 조작
 
 | 동작 | 방법 |
@@ -98,9 +113,28 @@ python -m http.server 8765
 | 잘못 붙인 글자 떼기 | 더블클릭 |
 | 단어 뜻 보기 | 단어 더블클릭 |
 | 생성 간격 줄이기 | 상단 게이지 클릭 |
-| 보드 넓히기 | 화면 가장자리로 마우스를 가져가면 나타나는 칩 클릭 |
-| 도감 | 왼쪽 가장자리 탭 |
-| 일시정지 | 오른쪽 아래 Ⅱ (또는 스페이스바) |
+| 보드 넓히기 | 보드 가장자리로 마우스를 가져가면 나타나는 칩 클릭 |
+| 도감 | 왼쪽 가장자리 세로선을 끌거나 클릭 |
+| 일시정지 · 설정 | 오른쪽 위 Ⅱ (또는 스페이스바) |
+
+## 사건 보상
+
+DOG 이 파낸 것, CAR 의 배달, LUCK 의 횡재처럼 **한 번씩 터지는 수입**은
+평생 벌어들인 총액이 아니라 **지금 보드가 20초에 버는 양(`payRate`)** 을 기준으로 계산한다
+(`behaviors.js` 의 `reward(배수, 최소분)`).
+
+총액에 비례시키면 벌수록 사건이 커지고 그래서 더 벌게 되는 눈덩이가 만들어져,
+후반에는 단어를 만드는 것보다 개 한 마리를 두는 쪽이 이득이 되어 버린다.
+지금 보드를 기준으로 잡으면 보상은 언제나 "몇 초치 수입"으로 읽히고,
+보드를 잘 꾸릴수록 사건도 같이 커진다.
+
+BUG 와 MOUSE 가 축내는 양도 같은 기준을 쓴다.
+
+## 힌트 값
+
+도감 힌트는 1단계 100w, 2단계 500w 에서 시작해 **지금까지 산 힌트 개수만큼 비싸진다**
+(한 개당 ×1.10, 최대 20배). 초반에는 막힌 곳을 부담 없이 뚫어 주고,
+후반에는 남아도는 재화가 빠져나가는 자리가 된다.
 
 ## 구조
 
@@ -112,7 +146,7 @@ js/
   dict.js        영어 단어 사전 65,014개 (생성물)
   defs.js        단어 뜻 지연 로더
   defs/A..Z.js   첫 글자별 뜻 데이터 (생성물, 필요할 때만 로드)
-  data.js        밸런스 상수 + 능력 단어 30개   ← 단어 추가는 여기서만
+  data.js        밸런스 상수 + 능력 단어 40개   ← 단어 추가는 여기서만
   fx.js          캔버스 파티클 레이어
   entity.js      보드 오브젝트 (낱글자 / 클러스터 / 단어)
   board.js       오브젝트 목록, 놀이영역/확장, 충돌 분리, 수입
@@ -131,16 +165,16 @@ ES 모듈을 쓰지 않는다 (`file://` 로 바로 열 수 있게 하려고). �
 
 ```js
 {
-  id: 'LAMP', kind: '사물', tags: ['metal'],
+  id: 'CANDLE', kind: '사물', tags: ['burnable'],
   desc: '도감과 단어 설명 팝오버에 그대로 쓰인다.',
   hint: '힌트 2단계에서 보여줄 짧은 설명',
   color: { fg:'#8a6a2c', bg:'#fffaf0', bd:'#e0cb96' },
   anim: 'pulse',        // shake | wave | float | pulse | tick | hop | still
   fx:   'sparkle',      // fx.js 의 AMB 키 (상시 파티클), 없으면 null
-  pay:  1.5,            // 재화 배수. 실지급 = round(2 × 2^(글자수-3) × pay)
+  pay:  1.5,            // 지금은 쓰이지 않는다 (벌이는 글자 수로만 정해진다)
   motion: { min:20, max:35, range:60 },   // 점프 간격(초)과 반경. null 이면 안 움직임
   flammable: false, heavy: false, ghost: false,
-  act: 'lampAct', actEvery: [20, 30],     // behaviors.js 의 ACTIONS[key]
+  act: 'candleAct', actEvery: [20, 30],   // behaviors.js 의 ACTIONS[key]
   bonds: [{ with:['GHOST'], range:110, time:8, key:'scare' }]  // BONDS[key]
 }
 ```
@@ -151,11 +185,14 @@ ES 모듈을 쓰지 않는다 (`file://` 로 바로 열 수 있게 하려고). �
 
 `with` 에는 단어 id 배열, `'#태그'`(`#burnable` 포함), `'@letter'`, `'*'` 를 쓸 수 있다.
 
-## 단어 30개
+## 단어 40개
 
-FIRE · WATER · ICE · WIND · SUN · RAIN · TREE · HOUSE · ROCK · ROAD · CAR ·
-CAT · MILK · DOG · BONE · BIRD · EGG · FISH · BUG · BANK · SHOP · GOLD ·
-KEY · BOX · MAGNET · CLOCK · TIME · LUCK · GHOST · BOOK
+FIRE · WATER · ICE · WIND · SUN · RAIN · TREE · SEED · RIVER · STORM · MOON · STAR ·
+HOUSE · ROCK · ROAD · CAR · BOX · KEY · MAGNET · BOOK · CLOCK · TIME · LAMP · NEST ·
+CAT · DOG · BIRD · FISH · BUG · EGG · MOUSE · BEE ·
+MILK · BONE · CHEESE · GOLD · BANK · SHOP · LUCK · GHOST
 
-숨겨진 단어는 없다. 30개 모두 처음부터 도감에 자리가 있고, 글자 수만 보인다.
-나머지 8만여 개 단어는 능력은 없지만 얼마든지 만들 수 있고, 도감 아래에 몇 종류를 만들어 봤는지 기록된다.
+숨겨진 단어는 없다. 40개 모두 처음부터 도감에 자리가 있고, 글자 수만 보인다.
+나머지 6만여 개 단어는 능력은 없지만 얼마든지 만들 수 있고, 도감 아래에 몇 종류를 만들어 봤는지 기록된다.
+
+설명에 아직 못 찾은 단어가 나오면 `???` 로 가려진다. 그 단어를 만들면 이름이 드러난다.

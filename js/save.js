@@ -1,12 +1,17 @@
 /* ==========================================================================
    save.js — 자동 저장 / 불러오기 (localStorage)
-   오프라인 수입은 아주 짧게만 인정한다. 이 게임은 켜 두고 보는 게임이다.
+   자리를 비운 동안 벌었을 액수의 10% 만 돌려준다. 켜 두고 보는 쪽이 언제나 이득이다.
    ========================================================================== */
 var G = window.G || (window.G = {});
 
 G.save = (function () {
   /* 재화 규칙이 완전히 바뀌었으므로 v1 저장본은 이어받지 않는다 */
   var KEY = 'letters-board-v2';
+
+  /* 초기화한 뒤에는 다시 쓰지 않는다.
+     이게 없으면 새로고침 직전의 beforeunload 가 방금 지운 자리에 현재 판을
+     그대로 다시 써 버려서, 초기화가 아무 일도 하지 않은 것처럼 보인다. */
+  var wiped = false;
 
   function newState() {
     return {
@@ -36,6 +41,7 @@ G.save = (function () {
   }
 
   function write() {
+    if (wiped) return false;
     try {
       G.state.lastTime = Date.now();
       localStorage.setItem(KEY, JSON.stringify(serialize()));
@@ -58,6 +64,7 @@ G.save = (function () {
   }
 
   function clear() {
+    wiped = true;
     try { localStorage.removeItem(KEY); } catch (err) { }
   }
 
@@ -79,7 +86,7 @@ G.save = (function () {
     }
   }
 
-  /** 자리를 비운 동안의 보상 (아주 제한적) */
+  /** 자리를 비운 동안의 보상 — 벌었을 액수의 OFFLINE_RATE 만큼 */
   function offlineGain(savedAt) {
     var dt = (Date.now() - savedAt) / 1000;
     if (!(dt > 0)) return 0;

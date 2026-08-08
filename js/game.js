@@ -10,6 +10,9 @@ G.game = (function () {
   var last = 0;
   var saveAcc = 0;
   var running = false;
+  var awayAt = 0;         // 보드를 재운 시각 (0 이면 돌아가는 중)
+  var awayByHide = false; // 탭을 떠나서 잠든 것인가 (아니면 손을 놓아서)
+  var idleAcc = 0;        // 마지막 조작 이후 흐른 시간
 
   /* ------------------------------------------------------------------
      초기화
@@ -51,10 +54,14 @@ G.game = (function () {
     if (!G.state.introDone) G.ui.showIntro(); else G.ui.hideIntro();
     G.ui.renderCodex();
 
-    document.addEventListener('visibilitychange', function () {
-      if (document.hidden) G.save.write();
-    });
+    if (document.hidden) { awayAt = Date.now(); awayByHide = true; }
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('beforeunload', function () { G.save.write(); });
+
+    var acts = ['pointerdown', 'pointermove', 'wheel', 'keydown'];
+    for (var a = 0; a < acts.length; a++) {
+      window.addEventListener(acts[a], onActivity, { passive: true });
+    }
 
     running = true;
     last = performance.now();
@@ -72,6 +79,45 @@ G.game = (function () {
   }
 
   /* ------------------------------------------------------------------
+     방치
+     탭을 떠났을 때, 그리고 켜 둔 채로 IDLE_AFTER 만큼 손을 놓았을 때
+     보드를 통째로 재운다. 글자도 생기지 않고, 깨어날 때 그동안의 몫만 따로 받는다.
+     ------------------------------------------------------------------ */
+  function sleepBoard(byHide) {
+    if (awayAt || paused) return;
+    awayAt = Date.now();
+    awayByHide = !!byHide;
+    G.drag.cancel();
+    G.ui.closePopovers();
+    G.ui.hideChip();
+    G.save.write();
+    if (!byHide) G.ui.setIdleUI(true);
+  }
+
+  function wakeBoard() {
+    idleAcc = 0;
+    last = performance.now();        // 재워 둔 시간이 한꺼번에 흐르지 않게
+    if (!awayAt) return;
+    var at = awayAt;
+    awayAt = 0;
+    G.ui.setIdleUI(false);
+    var gain = G.save.offlineGain(at);
+    if (gain > 1) G.ui.toast('자리를 비운 동안 ' + U.money(gain) + ' 을 모았다');
+  }
+
+  /** 조작이 있었다 — 재워 둔 보드라면 깨운다 */
+  function onActivity() {
+    if (awayAt && awayByHide) return;   // 탭 복귀는 visibilitychange 가 맡는다
+    if (awayAt) wakeBoard();
+    else idleAcc = 0;
+  }
+
+  function onVisibility() {
+    if (document.hidden) { sleepBoard(true); return; }
+    wakeBoard();
+  }
+
+  /* ------------------------------------------------------------------
      루프
      ------------------------------------------------------------------ */
   function loop(now) {
@@ -83,7 +129,10 @@ G.game = (function () {
     if (dt > 0.1) dt = 0.1;          // 탭 전환 등으로 인한 큰 점프 방지
     if (dt <= 0) return;
 
-    if (!paused) {
+    if (!paused && !awayAt) {
+      idleAcc += dt;
+      if (idleAcc >= C.IDLE_AFTER) { sleepBoard(false); return; }
+
       stepSpawn(dt);
       G.drag.tick(dt);
       G.board.step(dt);
@@ -140,7 +189,9 @@ G.game = (function () {
         G.ui.toast('능력을 가진 단어 <b>' + id + '</b> 발견');
         var n = Object.keys(G.state.discovered).length;
         if (n === G.WORDS.length) {
-          setTimeout(function () { G.ui.toast('능력 단어 30개를 모두 찾았다'); }, 1200);
+          setTimeout(function () {
+            G.ui.toast('능력 단어 ' + G.WORDS.length + '개를 모두 찾았다');
+          }, 1200);
         }
       } else if (!quiet) {
         G.ui.toast('<b>' + id + '</b>');
@@ -186,6 +237,7 @@ G.game = (function () {
       G.save.write();
     } else {
       last = performance.now();
+      idleAcc = 0;
     }
     G.ui.setPausedUI(paused);
   }

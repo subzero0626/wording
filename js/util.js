@@ -39,10 +39,11 @@ G.util = (function () {
   function seedUid(n) { if (n > _id) _id = n; }
   function currentUid() { return _id; }
 
-  function money(v) {
-    var n = Math.floor(v);
-    return '$' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  /** 재화 단위는 w. 숫자만 필요하면 num() 을 쓴다 */
+  function num(v) {
+    return Math.floor(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
+  function money(v) { return num(v) + 'w'; }
 
   function secs(v) {
     return Math.max(0, Math.ceil(v)) + '초';
@@ -72,7 +73,7 @@ G.util = (function () {
     clamp: clamp, lerp: lerp, rand: rand, randInt: randInt, pick: pick, chance: chance,
     dist: dist, dist2: dist2, weightedPick: weightedPick,
     uid: uid, seedUid: seedUid, currentUid: currentUid,
-    money: money, secs: secs, overlap: overlap,
+    num: num, money: money, secs: secs, overlap: overlap,
     easeOutCubic: easeOutCubic, easeInOut: easeInOut, el: el
   };
 })();

@@ -73,7 +73,7 @@ G.tokens = (function () {
   function spawn(x, y, value) {
     var el = document.createElement('div');
     el.className = 'token';
-    el.textContent = '$';
+    el.textContent = 'w';
     el.style.left = (x - 17) + 'px';
     el.style.top = (y - 17) + 'px';
     layer.appendChild(el);
@@ -89,7 +89,7 @@ G.tokens = (function () {
   function take(t) {
     if (t.dead) return;
     t.dead = true;
-    G.board.earn(t.value, { x: t.x, y: t.y });
+    G.board.earn(t.value);
     G.ui.floatMoney(t.x, t.y, t.value);
     G.fx.coins(t.x, t.y, 10);
     kill(t);
@@ -139,8 +139,22 @@ G.behaviors = (function () {
 
   function isWord(id) { return function (o) { return o.type === 'word' && o.text === id; }; }
   function isLoose(o) { return o.type !== 'word' && !o.dragging; }
+  function isAnyWord(ids) {
+    return function (o) { return o.type === 'word' && ids.indexOf(o.text) >= 0; };
+  }
 
   function rgb(hex) { return G.drag.hexToRgb(hex); }
+
+  /**
+   * 사건 보상액.
+   * 평생 수입(totalEarned)에 비례시키면 벌수록 사건이 커지는 눈덩이가 되므로,
+   * 지금 보드가 20초에 버는 양(payRate)을 기준으로 "몇 초치"인지로 정한다.
+   * @param mul  payRate 배수 (1 이면 20초치)
+   * @param flat 보드가 작을 때를 위한 최소분
+   */
+  function reward(mul, flat) {
+    return Math.max(1, Math.round(flat + G.board.payRate() * mul));
+  }
 
   /* ==================================================================
      FIELDS — 매 프레임 지속 효과
@@ -238,12 +252,10 @@ G.behaviors = (function () {
 
     /* 물이 가까우면 편안히 헤엄친다 */
     FISH: function (e, dt) {
-      var w = G.board.nearest(e, 138, function (o) {
-        return o.type === 'word' && (o.text === 'WATER' || o.text === 'RAIN' || o.text === 'ICE');
-      });
+      var w = G.board.nearest(e, 138, isAnyWord(['RIVER', 'WATER', 'RAIN', 'ICE']));
       if (w) {
         e.calm = true;
-        e.incomeMul *= 3.2;
+        e.incomeMul *= (w.text === 'RIVER') ? 4.0 : 3.2;
         if (Math.random() < dt * 1.2) {
           G.fx.spark(e.x + U.rand(-14, 14), e.y - 8, {
             vx: 0, vy: -12, r: 1.3, life: .6, c: '80,170,180', a: .5
@@ -252,12 +264,12 @@ G.behaviors = (function () {
       }
     },
 
-    /* 나무가 가까우면 둥지를 튼다 */
+    /* 둥지나 나무가 가까우면 자리를 잡는다 */
     BIRD: function (e, dt) {
-      var t = G.board.nearest(e, 112, isWord('TREE'));
+      var t = G.board.nearest(e, 112, isAnyWord(['NEST', 'TREE']));
       if (t) {
         e.calm = true;
-        e.incomeMul *= 2.6;
+        e.incomeMul *= (t.text === 'NEST') ? 3.2 : 2.6;
       }
     },
 
@@ -286,8 +298,8 @@ G.behaviors = (function () {
           if (U.chance(.4) && G.board.count() < C.MAX_ENTITIES) {
             G.board.spawnLetter(null, e.x + U.rand(-40, 40), e.y + U.rand(20, 50));
           } else {
-            var v = Math.round(10 + Math.random() * 22 + (G.state.totalEarned || 0) * 0.0012);
-            G.board.earn(v, e); G.ui.floatMoney(e.x, e.y - 18, v);
+            var v = reward(0.3, 10);
+            G.board.earn(v); G.ui.floatMoney(e.x, e.y - 18, v);
           }
           G.fx.burst(e.x, e.y + 14, '150,120,80', 10, 60);
         }
@@ -355,7 +367,107 @@ G.behaviors = (function () {
     TREE: function (e, dt) {
       if (e.data.bugged > 0) e.data.bugged -= dt;
       if (e.data.wet > 0) { e.data.wet -= dt; e.speedMul *= 1.8; }
-      if (G.board.nearest(e, 126, isWord('WATER'))) e.speedMul *= 1.5;
+      if (G.board.nearest(e, 126, isAnyWord(['RIVER', 'WATER']))) e.speedMul *= 1.5;
+    },
+
+    /* 씨앗은 때가 되면 싹을 틔운다. 물이 가까우면 훨씬 빠르다 */
+    SEED: function (e, dt) {
+      if (e.burning) return;
+      var wet = G.board.nearest(e, 132, isAnyWord(['RIVER', 'WATER', 'RAIN', 'STORM']));
+      e.data.grow = (e.data.grow || 0) + dt * e.speedMul * (wet ? 2.4 : 1);
+      if (Math.random() < dt * .5) {
+        G.fx.spark(e.x + U.rand(-8, 8), e.y - 4, {
+          vx: 0, vy: -10, r: 1.3, life: .7, c: '120,175,110', a: .5
+        });
+      }
+      if (e.data.grow >= 90) {
+        var x = e.x, y = e.y;
+        G.board.remove(e);
+        G.fx.burst(x, y, '110,170,110', 18, 96);
+        var t = G.board.makeWord('TREE', x, y);
+        t.born();
+        G.game.onWordFormed(t, true);
+        G.ui.toast('씨앗이 자라 <b>TREE</b> 가 되었다');
+      }
+    },
+
+    /* 강: 넉넉히 불을 끄고 나무를 키운다 */
+    RIVER: function (e, dt) {
+      var b = G.board.near(e, 168, function (o) { return o.burning; });
+      for (var i = 0; i < b.length; i++) {
+        if (acc(b[i], 'wet', dt) > 3) b[i].extinguish();
+      }
+      var t = G.board.near(e, 150, isAnyWord(['TREE', 'SEED']));
+      for (var j = 0; j < t.length; j++) t[j].speedMul *= 1.5;
+    },
+
+    /* 달: 주변을 밤처럼 잠재운다. 해가 가까우면 힘을 잃는다 */
+    MOON: function (e, dt) {
+      if (G.board.nearest(e, 176, isWord('SUN'))) { e.incomeMul *= 0.5; return; }
+      var n = G.board.near(e, 160, function (o) { return o !== e; });
+      for (var i = 0; i < n.length; i++) {
+        n[i].calm = true;
+        n[i].incomeMul *= 1.5;
+      }
+      if (Math.random() < dt * .5) {
+        G.fx.spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-10, 10), {
+          vx: 0, vy: -7, r: 1.4, life: 1.1, c: '160,165,205', a: .45
+        });
+      }
+    },
+
+    /* 별: 가까운 행운을 더 자주 일으킨다 */
+    STAR: function (e, dt) {
+      var l = G.board.near(e, 190, isWord('LUCK'));
+      for (var i = 0; i < l.length; i++) l[i].speedMul *= 2.2;
+    },
+
+    /* 등불: 주위를 밝히고 유령을 밀어낸다 */
+    LAMP: function (e, dt) {
+      var n = G.board.near(e, 150, function (o) { return o.type === 'word' && o !== e; });
+      for (var i = 0; i < n.length; i++) n[i].incomeMul *= 1.25;
+      var g = G.board.near(e, 122, isWord('GHOST'));
+      for (var j = 0; j < g.length; j++) g[j].push(e.x, e.y, 90 * dt);
+    },
+
+    /* 둥지: 새가 앉으면 얌전해진다 */
+    NEST: function (e, dt) {
+      if (G.board.nearest(e, 112, isWord('BIRD'))) e.incomeMul *= 1.4;
+    },
+
+    /* 생쥐: 치즈 곁에서는 얌전해진다 */
+    MOUSE: function (e, dt) {
+      if (G.board.nearest(e, 108, isWord('CHEESE'))) {
+        e.calm = true;
+        e.incomeMul *= 2.6;
+      }
+    },
+
+    /* 치즈: 생쥐를 천천히 끌어당긴다 */
+    CHEESE: function (e, dt) {
+      var m = G.board.near(e, 210, isWord('MOUSE'));
+      for (var i = 0; i < m.length; i++) {
+        var o = m[i];
+        if (o.jump) continue;
+        var d = Math.max(28, U.dist(e.x, e.y, o.x, o.y));
+        if (d < 54) continue;
+        var f = 110 * dt;
+        o.vx += ((e.x - o.x) / d) * f;
+        o.vy += ((e.y - o.y) / d) * f;
+      }
+    },
+
+    /* 벌: 나무나 씨앗 곁에서 꿀을 모은다 */
+    BEE: function (e, dt) {
+      var t = G.board.near(e, 132, isAnyWord(['TREE', 'SEED']));
+      if (!t.length) return;
+      e.incomeMul *= 2.2;
+      for (var i = 0; i < t.length; i++) t[i].speedMul *= 1.4;
+      if (Math.random() < dt * .8) {
+        G.fx.spark(e.x + U.rand(-10, 10), e.y - 6, {
+          vx: U.rand(-8, 8), vy: -10, r: 1.3, life: .6, c: '225,190,70', a: .7
+        });
+      }
     }
   };
 
@@ -455,8 +567,8 @@ G.behaviors = (function () {
         for (var i = 0; i < n.length; i++) n[i].push(self.x, self.y, 170);
         G.fx.ring(self.x, self.y, { r0: 4, r1: 70, life: .35, c: '170,90,90', lw: 1 });
         if (road) {
-          var v = Math.round(6 + Math.random() * 12 + (G.state.totalEarned || 0) * 0.0008);
-          G.board.earn(v, self);
+          var v = reward(0.25, 8);
+          G.board.earn(v);
           G.ui.floatMoney(self.x, self.y - 20, v);
         }
         self.onLand = null;
@@ -475,8 +587,7 @@ G.behaviors = (function () {
       if (G.tokens.count() > 5) return;
       var a = Math.random() * 6.2832, d = U.rand(46, 92);
       var p = G.board.clampPoint(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, { w: 40, h: 40 });
-      var base = 14 + (G.state.totalEarned || 0) * 0.0025;
-      G.tokens.spawn(p.x, p.y, Math.round(base * U.rand(.7, 1.6)));
+      G.tokens.spawn(p.x, p.y, Math.round(reward(0.5, 14) * U.rand(.7, 1.4)));
       G.fx.ring(e.x, e.y, { r0: 6, r1: 60, life: .5, c: '180,110,175', lw: 1 });
     },
 
@@ -485,8 +596,10 @@ G.behaviors = (function () {
       var v = e.data.vault || 0;
       if (v < 1) return;
       e.data.vault = 0;
+      /* 금고 환급은 earn() 을 거치지 않는다 — 다시 30% 를 떼여 돌고 돌기 때문 */
       var pay = v * 1.18;
       G.state.money += pay;
+      G.state.totalEarned = (G.state.totalEarned || 0) + pay;
       G.ui.floatMoney(e.x, e.y - 22, pay);
       G.fx.coins(e.x, e.y, 14);
       G.fx.ring(e.x, e.y, { r0: 6, r1: 70, life: .6, c: '70,150,110', lw: 1.5 });
@@ -499,8 +612,8 @@ G.behaviors = (function () {
         G.board.spawnLetter(null, e.x + U.rand(-70, 70), e.y + U.rand(-50, 50));
         G.ui.toast('행운: 새 글자');
       } else if (roll === 1) {
-        var v = Math.round(22 + (G.state.totalEarned || 0) * 0.004);
-        G.board.earn(v, e); G.ui.floatMoney(e.x, e.y - 20, v);
+        var v = reward(0.8, 22);
+        G.board.earn(v); G.ui.floatMoney(e.x, e.y - 20, v);
         G.fx.coins(e.x, e.y, 12);
       } else if (roll === 2) {
         var burning = G.board.all().filter(function (o) { return o.burning; });
@@ -552,13 +665,71 @@ G.behaviors = (function () {
       }
     },
 
+    /* 폭풍 — 돌풍과 비를 한꺼번에 */
+    storm: function (e) {
+      ACTIONS.gust(e);
+      ACTIONS.rain(e);
+      G.fx.ring(e.x, e.y, { r0: 14, r1: 250, life: .8, c: '90,105,140', lw: 2 });
+    },
+
+    /* 별에게 비는 소원 */
+    star: function (e) {
+      if (U.chance(.35) && G.game.freeHint()) {
+        G.fx.ring(e.x, e.y, { r0: 6, r1: 90, life: .9, c: '225,205,120', lw: 1.4 });
+        return;
+      }
+      var v = reward(0.55, 18);
+      G.board.earn(v); G.ui.floatMoney(e.x, e.y - 20, v);
+      for (var i = 0; i < 10; i++) {
+        G.fx.spark(e.x, e.y, {
+          vx: U.rand(-40, 40), vy: U.rand(-50, -10), r: U.rand(1.4, 2.6),
+          life: 1, c: '235,215,130', a: .8, shape: 'star'
+        });
+      }
+    },
+
+    /* 둥지에 알이 하나 */
+    nest: function (e) {
+      if (e.burning) return;
+      if (!G.board.nearest(e, 118, isWord('BIRD'))) return;
+      if (G.board.count() >= C.MAX_ENTITIES) return;
+      /* 새 → 알 → 새 가 끝없이 불어나지 않게 */
+      var flock = G.board.all().filter(isAnyWord(['EGG', 'BIRD']));
+      if (flock.length >= 5) return;
+      var p = G.board.clampPoint(e.x + U.rand(-48, 48), e.y + U.rand(28, 54), { w: 60, h: 40 });
+      var g = G.board.makeWord('EGG', p.x, p.y);
+      g.born();
+      G.game.onWordFormed(g, true);
+      G.fx.ring(e.x, e.y, { r0: 6, r1: 62, life: .6, c: '190,165,120', lw: 1.2 });
+      G.ui.toast('둥지에 <b>EGG</b> 가 하나 놓였다');
+    },
+
+    /* 벌이 꿀을 턴다 */
+    bee: function (e) {
+      if (!G.board.nearest(e, 132, isAnyWord(['TREE', 'SEED']))) { e.startJump(120); return; }
+      var v = reward(0.22, 8);
+      G.board.earn(v); G.ui.floatMoney(e.x, e.y - 16, v);
+      G.fx.coins(e.x, e.y, 6);
+    },
+
+    /* 생쥐가 축낸다 */
+    mouse: function (e) {
+      if (G.board.nearest(e, 108, isWord('CHEESE'))) return;   // 치즈 옆에서는 얌전하다
+      var steal = Math.min(G.state.money, reward(0.1, 2));
+      if (steal > 0.5) {
+        G.state.money -= steal;
+        G.ui.floatMoney(e.x, e.y - 14, -steal);
+      }
+      e.startJump(120);
+    },
+
     /* 벌레가 훔쳐간다 */
     bug: function (e) {
       var t = G.board.nearest(e, 160, function (o) {
         return o.type === 'word' && o !== e && (o.def.value || 0) >= 4;
       });
       if (!t) { e.startJump(90); return; }
-      var steal = Math.min(G.state.money, 2 + (G.state.totalEarned || 0) * 0.0005);
+      var steal = Math.min(G.state.money, reward(0.12, 2));
       if (steal > 0.5) {
         G.state.money -= steal;
         G.ui.floatMoney(t.x, t.y - 16, -steal);
@@ -598,7 +769,7 @@ G.behaviors = (function () {
       var v = b.data.stored || 0;
       b.data.stored = 0;
       if (v > 1) {
-        G.board.earn(v, b);
+        G.board.earn(v);
         G.ui.floatMoney(b.x, b.y - 24, v);
       }
       var held = G.board.near(b, 140, function (o) { return o.type !== 'word'; });
@@ -621,12 +792,44 @@ G.behaviors = (function () {
       G.fx.burst(a.x, a.y + 12, '160,130,90', 10, 60);
       G.contacts.clear(a, b, 'dig', 26);
     },
+    hunt: function (a, b) {            // a=CAT, b=MOUSE
+      var x = b.x, y = b.y;
+      G.board.remove(b);
+      G.fx.burst(x, y, '150,140,130', 14, 82);
+      var v = reward(0.5, 14);
+      G.board.earn(v); G.ui.floatMoney(x, y - 14, v);
+      G.ui.toast('CAT 이 MOUSE 를 잡았다');
+    },
+    nibble: function (a, b) {          // a=MOUSE, b=CHEESE
+      var v = reward(0.45, 12);
+      G.board.earn(v); G.ui.floatMoney(b.x, b.y - 20, v);
+      G.fx.coins(b.x, b.y, 8);
+      G.contacts.clear(a, b, 'nibble', 12);
+    },
+    banish: function (a, b) {          // a=LAMP, b=GHOST
+      var ang = Math.atan2(b.y - a.y, b.x - a.x);
+      b.startJump(300, ang, .7);
+      b.actTimer = Math.max(b.actTimer, 20);   // 한동안 놀래키지 못한다
+      G.fx.ring(b.x, b.y, { r0: 4, r1: 90, life: .6, c: '225,195,110', lw: 1.5 });
+      G.ui.toast('LAMP 가 GHOST 를 쫓아냈다');
+      G.contacts.clear(a, b, 'banish', 20);
+    },
+    pollen: function (a, b) {          // a=BEE, b=TREE
+      if (!b.burning && G.board.count() < C.MAX_ENTITIES) {
+        var L = G.board.spawnLetter(null, b.x + U.rand(-50, 50), b.y + U.rand(30, 58));
+        L.vy = 26;
+      }
+      var v = reward(0.3, 10);
+      G.board.earn(v); G.ui.floatMoney(a.x, a.y - 16, v);
+      G.fx.ring(b.x, b.y, { r0: 6, r1: 66, life: .6, c: '215,185,80', lw: 1.2 });
+      G.contacts.clear(a, b, 'pollen', 14);
+    },
     eat: function (a, b) {             // a=BIRD, b=BUG
       var x = b.x, y = b.y;
       G.board.remove(b);
       G.fx.burst(x, y, '110,130,60', 14, 80);
-      var v = Math.round(16 + (G.state.totalEarned || 0) * 0.0015);
-      G.board.earn(v, a); G.ui.floatMoney(x, y - 14, v);
+      var v = reward(0.6, 16);
+      G.board.earn(v); G.ui.floatMoney(x, y - 14, v);
       G.ui.toast('BIRD 가 BUG 를 잡았다');
     }
   };

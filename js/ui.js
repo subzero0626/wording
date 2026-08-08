@@ -8,9 +8,9 @@ var G = window.G || (window.G = {});
 G.ui = (function () {
   var U = G.util, C = G.C;
 
-  var elMoney, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
+  var elMoney, elMoneyVal, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
     elCodex, elCodexTab, elCodexList, elCodexCount, elCodexFoot, elChip, elToasts,
-    elPauseVeil, elIntro, playEl, appEl;
+    elPauseVeil, elIdleVeil, elIntro, playEl, appEl;
 
   var lastMoneyShown = -1;
   var chipEdge = null;
@@ -19,6 +19,7 @@ G.ui = (function () {
     appEl = document.getElementById('app');
     playEl = document.getElementById('play');
     elMoney = document.getElementById('money');
+    elMoneyVal = elMoney.querySelector('.m-v');
     elGauge = document.getElementById('gauge');
     elGaugeBar = document.querySelector('#gaugeBar i');
     elGaugeText = document.getElementById('gaugeText');
@@ -32,6 +33,7 @@ G.ui = (function () {
     elChip = document.getElementById('expandChip');
     elToasts = document.getElementById('toasts');
     elPauseVeil = document.getElementById('pauseVeil');
+    elIdleVeil = document.getElementById('idleVeil');
     elIntro = document.getElementById('intro');
 
     /* --- 생성 게이지 / 업그레이드 팝오버 --- */
@@ -52,10 +54,12 @@ G.ui = (function () {
     });
     document.addEventListener('pointerdown', function () { closePopovers(); });
 
-    /* --- 도감 --- */
-    elCodexTab.addEventListener('click', function (ev) {
-      ev.stopPropagation(); toggleCodex(true);
-    });
+    /* --- 도감: 손잡이를 끌어서 여닫는다 (그냥 누르면 토글) --- */
+    elCodexTab.addEventListener('pointerdown', onCodexGrab);
+    window.addEventListener('pointermove', onCodexDrag);
+    window.addEventListener('pointerup', endCodexDrag);
+    window.addEventListener('pointercancel', endCodexDrag);
+
     document.getElementById('codexClose').addEventListener('click', function (ev) {
       ev.stopPropagation(); toggleCodex(false);
     });
@@ -76,10 +80,6 @@ G.ui = (function () {
     });
     document.getElementById('resumeBtn').addEventListener('click', function (ev) {
       ev.stopPropagation(); G.game.setPaused(false);
-    });
-    document.getElementById('settingsBtn').addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      document.getElementById('settings').classList.toggle('hidden');
     });
     document.getElementById('optFx').addEventListener('change', function () {
       G.state.opt.fx = this.checked;
@@ -111,7 +111,7 @@ G.ui = (function () {
     var m = Math.floor(G.state.money);
     if (m !== lastMoneyShown) {
       lastMoneyShown = m;
-      elMoney.textContent = U.money(m);
+      elMoneyVal.textContent = U.num(m);
     }
     var total = G.game.spawnInterval();
     var left = G.state.spawnTimer;
@@ -145,7 +145,7 @@ G.ui = (function () {
     var d = document.createElement('div');
     d.className = 'float-money' + (small ? ' small' : '');
     var neg = amount < 0;
-    d.textContent = (neg ? '-' : '+') + U.money(Math.abs(amount));
+    d.textContent = (neg ? '-' : '+') + U.num(Math.abs(amount));   // 단위 없이 숫자만
     if (neg) d.style.color = '#b4544a';
     d.style.left = (r.left + x) + 'px';
     d.style.top = (r.top + y - 20) + 'px';
@@ -259,32 +259,44 @@ G.ui = (function () {
   /* ------------------------------------------------------------------
      확장 칩
      ------------------------------------------------------------------ */
-  var BAND = 58;
+  var BAND = 52;      // 놀이영역 경계에서 이만큼 안/밖까지가 반응 범위
+  var CHIP_OFF = 27;  // 칩을 경계 바깥으로 이만큼 띄운다 (글자를 가리지 않게)
 
-  /** 화면 가장자리 근처에서만 확장 칩을 보여준다 (드래그 중에는 방해하지 않는다) */
+  /** 보드(놀이영역) 가장자리 근처에서만 확장 칩을 보여준다 (드래그 중에는 방해하지 않는다) */
   function onPointerMove(ev) {
-    if (G.game.paused || G.drag.current) { hideChip(); return; }
+    if (G.game.paused || G.drag.current || cdOn) { hideChip(); return; }
     if (ev.target && ev.target.closest &&
       ev.target.closest('#gauge,#money,#codexTab,#codex,#pauseBtn,.pop,.token')) {
       hideChip(); return;
     }
-    var w = window.innerWidth, h = window.innerHeight;
+    var r = playEl.getBoundingClientRect();
     var x = ev.clientX, y = ev.clientY;
-    var edge = null;
-    if (x < BAND) edge = 'left';
-    else if (x > w - BAND) edge = 'right';
-    else if (y > h - BAND) edge = 'bottom';
-    else if (y < BAND) edge = 'top';
 
-    if (!edge) { hideChip(); return; }
-    chipEdge = edge;
+    /* 경계에서 너무 멀면(안쪽 깊숙이든 바깥이든) 보여주지 않는다 */
+    if (x < r.left - BAND || x > r.right + BAND ||
+      y < r.top - BAND || y > r.bottom + BAND) { hideChip(); return; }
 
-    var pad = 30;
+    var cand = [
+      { e: 'left', d: Math.abs(x - r.left) },
+      { e: 'right', d: Math.abs(r.right - x) },
+      { e: 'top', d: Math.abs(y - r.top) },
+      { e: 'bottom', d: Math.abs(r.bottom - y) }
+    ];
+    var best = cand[0];
+    for (var i = 1; i < cand.length; i++) if (cand[i].d < best.d) best = cand[i];
+    if (best.d > BAND) { hideChip(); return; }
+
+    chipEdge = best.e;
+
     var cx, cy;
-    if (edge === 'top') { cx = x; cy = pad + 12; }
-    else if (edge === 'bottom') { cx = x; cy = h - pad - 12; }
-    else if (edge === 'left') { cx = pad + 22; cy = y; }
-    else { cx = w - pad - 22; cy = y; }
+    if (best.e === 'top') { cx = x; cy = r.top - CHIP_OFF; }
+    else if (best.e === 'bottom') { cx = x; cy = r.bottom + CHIP_OFF; }
+    else if (best.e === 'left') { cx = r.left - CHIP_OFF; cy = y; }
+    else { cx = r.right + CHIP_OFF; cy = y; }
+
+    /* 칩이 경계를 따라 움직이되 화면 밖으로는 나가지 않게 */
+    cx = U.clamp(cx, 56, window.innerWidth - 56);
+    cy = U.clamp(cy, 24, window.innerHeight - 24);
 
     elChip.style.left = Math.round(cx) + 'px';
     elChip.style.top = Math.round(cy) + 'px';
@@ -330,13 +342,64 @@ G.ui = (function () {
     if (open) renderCodex();
   }
 
-  var HINT_COST = [180, 450];
+  /* 손잡이 드래그 — 서랍이 손가락을 그대로 따라온다 */
+  var cdW = 0, cdFrom = 0, cdX = 0, cdOpen = false, cdOn = false, cdMoved = false;
+
+  function onCodexGrab(ev) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    cdOpen = elCodex.classList.contains('open');
+    cdW = elCodex.offsetWidth;
+    cdFrom = ev.clientX;
+    cdX = cdOpen ? cdW : 0;
+    cdOn = true;
+    cdMoved = false;
+    if (!cdOpen) renderCodex();          // 열리기 전에 내용을 채워 둔다
+    if (elCodexTab.setPointerCapture) elCodexTab.setPointerCapture(ev.pointerId);
+    elCodex.classList.add('dragging');
+    elCodexTab.classList.add('dragging');
+  }
+
+  function onCodexDrag(ev) {
+    if (!cdOn) return;
+    var d = ev.clientX - cdFrom;
+    if (Math.abs(d) > 3) cdMoved = true;
+    cdX = U.clamp((cdOpen ? cdW : 0) + d, 0, cdW);
+    elCodex.style.transform = 'translateX(calc(-100% + ' + cdX.toFixed(1) + 'px))';
+    elCodexTab.style.transform = 'translate(' + cdX.toFixed(1) + 'px,-50%)';
+  }
+
+  function endCodexDrag() {
+    if (!cdOn) return;
+    cdOn = false;
+    elCodex.classList.remove('dragging');
+    elCodexTab.classList.remove('dragging');
+    elCodex.style.transform = '';
+    elCodexTab.style.transform = '';
+    /* 끌지 않고 눌렀다 떼면 그냥 토글, 끌었다면 놓은 위치로 결정한다 */
+    toggleCodex(cdMoved ? (cdX > cdW * (cdOpen ? 0.65 : 0.28)) : !cdOpen);
+  }
+
+  /* 설명 안에 나오는 다른 능력 단어 이름은, 아직 못 찾았다면 가려 준다.
+     앞뒤가 한글이나 공백이라 \b 로 정확히 그 단어일 때만 잡힌다. */
+  var WORD_RE = (function () {
+    var ids = G.WORDS.map(function (w) { return w.id; })
+      .sort(function (a, b) { return b.length - a.length; });
+    return new RegExp('\\b(' + ids.join('|') + ')\\b', 'g');
+  })();
+
+  function maskUnknown(text) {
+    if (G.TEST_UNLOCK_ALL) return text;
+    return text.replace(WORD_RE, function (id) {
+      return G.state.discovered[id] ? id : '<i class="q">???</i>';
+    });
+  }
 
   function renderCodex() {
     if (!elCodexList) return;
     var found = 0, html = '';
     G.WORDS.forEach(function (w) {
-      var got = !!G.state.discovered[w.id];
+      var got = G.TEST_UNLOCK_ALL || !!G.state.discovered[w.id];
       if (got) found++;
       var hint = G.state.hints[w.id] || 0;
       html += '<div class="cx' + (got ? '' : ' locked') + '">';
@@ -345,7 +408,7 @@ G.ui = (function () {
       if (got) {
         html += '<div class="n">' + w.id + '</div>';
         html += '<div class="k">' + w.kind + '</div>';
-        html += '<div class="d">' + w.desc + '</div>';
+        html += '<div class="d">' + maskUnknown(w.desc) + '</div>';
       } else {
         var mask = '';
         for (var i = 0; i < w.id.length; i++) {
@@ -353,11 +416,11 @@ G.ui = (function () {
         }
         html += '<div class="n">' + mask + '</div>';
         html += '<div class="k">' + (hint >= 1 ? w.kind : w.id.length + ' 글자') + '</div>';
-        if (hint >= 2) html += '<div class="d">' + w.hint + '</div>';
+        if (hint >= 2) html += '<div class="d">' + maskUnknown(w.hint) + '</div>';
         var lv = hint;
         if (lv < 2) {
           html += '<button class="hintbtn" data-w="' + w.id + '">힌트 ' +
-            U.money(HINT_COST[lv]) + '</button>';
+            U.money(G.hintCost(lv)) + '</button>';
         }
       }
       html += '</div></div>';
@@ -382,7 +445,7 @@ G.ui = (function () {
   function buyHint(id) {
     var lv = G.state.hints[id] || 0;
     if (lv >= 2) return;
-    var cost = HINT_COST[lv];
+    var cost = G.hintCost(lv);
     if (!G.board.spend(cost)) { toast('돈이 부족하다'); return; }
     G.state.hints[id] = lv + 1;
     renderCodex();
@@ -398,7 +461,10 @@ G.ui = (function () {
 
   function setPausedUI(p) {
     elPauseVeil.classList.toggle('hidden', !p);
-    if (!p) document.getElementById('settings').classList.add('hidden');
+  }
+
+  function setIdleUI(on) {
+    if (elIdleVeil) elIdleVeil.classList.toggle('hidden', !on);
   }
 
   function syncOptions() {
@@ -410,7 +476,8 @@ G.ui = (function () {
     init: init, tick: tick, toast: toast, floatMoney: floatMoney, pulseGauge: pulseGauge,
     closePopovers: closePopovers, showWordPop: showWordPop,
     renderCodex: renderCodex, toggleCodex: toggleCodex,
-    setPausedUI: setPausedUI, hideIntro: hideIntro, showIntro: showIntro,
+    setPausedUI: setPausedUI, setIdleUI: setIdleUI,
+    hideIntro: hideIntro, showIntro: showIntro,
     syncOptions: syncOptions, hideChip: hideChip
   };
 })();
