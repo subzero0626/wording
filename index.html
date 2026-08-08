@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>LETTERS — 살아있는 글자 보드</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 보드(전체 영역) -->
+  <div id="board">
+    <!-- 실제 사용 가능한 놀이 영역 (확장됨) -->
+    <div id="play">
+      <canvas id="fx"></canvas>
+      <div id="layer"></div>
+      <div id="snapline"></div>
+      <div id="snaphint"><span class="sh-t"></span><i class="sh-p"></i></div>
+    </div>
+    <!-- 가장자리 확장 칩 (평소엔 숨어 있다) -->
+    <div id="expandChip" class="chip">
+      <span class="chip-t">확장</span>
+      <span class="chip-c">$0</span>
+    </div>
+
+    <!-- 보드 밖으로 끌어냈을 때 뜨는 판매 안내 -->
+    <div id="sellChip">
+      <span class="sell-t"></span>
+      <span class="sell-c"></span>
+    </div>
+  </div>
+
+  <!-- 상단 중앙: 다음 글자 게이지 -->
+  <div id="gauge" title="클릭하면 생성 간격을 줄일 수 있습니다">
+    <div id="gaugeBar"><i></i></div>
+    <div id="gaugeText">다음 글자 45초</div>
+  </div>
+
+  <!-- 생성 간격 업그레이드 팝오버 -->
+  <div id="spawnPop" class="pop hidden">
+    <div class="pop-row">현재 생성 간격 <b id="popCur">45초</b></div>
+    <div class="pop-step"><span id="popFrom">45초</span> <em>→</em> <span id="popTo">41초</span></div>
+    <div class="pop-cost">비용 <b id="popCost">$250</b></div>
+    <button id="popBuy">단축</button>
+  </div>
+
+  <!-- 상단 우측: 재화 -->
+  <div id="money">$0</div>
+
+  <!-- 좌측: 도감 탭 -->
+  <div id="codexTab"><span class="arrow">▶</span><span class="lbl">도감</span></div>
+  <aside id="codex">
+    <header>
+      <h2>도감</h2>
+      <span id="codexCount">0 / 30</span>
+      <button id="codexClose" aria-label="닫기">✕</button>
+    </header>
+    <div id="codexList"></div>
+    <footer>보드에서 글자를 끌어다 붙이면 단어가 됩니다.</footer>
+  </aside>
+
+  <!-- 우측 하단: 일시정지 -->
+  <button id="pauseBtn" aria-label="일시정지">Ⅱ</button>
+
+  <!-- 일시정지 오버레이 -->
+  <div id="pauseVeil" class="hidden">
+    <div class="veil-inner">
+      <h1>PAUSED</h1>
+      <button id="resumeBtn">계속하기</button>
+      <button id="settingsBtn">설정</button>
+      <div id="settings" class="hidden">
+        <label><input type="checkbox" id="optFx" checked> 파티클 효과</label>
+        <label><input type="checkbox" id="optSnapHint" checked> 조합 가이드 표시</label>
+        <button id="resetBtn">처음부터 다시</button>
+        <p class="tiny">진행 상황은 자동으로 저장됩니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 단어 뜻 팝오버 (더블클릭) -->
+  <div id="wordPop" class="pop hidden">
+    <div class="wp-head">
+      <span class="wp-name"></span>
+      <span class="wp-pos"></span>
+    </div>
+    <div class="wp-base"></div>
+    <div class="wp-ko"></div>
+    <div class="wp-gloss"></div>
+    <div class="wp-pay"></div>
+    <button class="wp-break">분해</button>
+  </div>
+
+  <!-- 토스트 -->
+  <div id="toasts"></div>
+
+  <!-- 최초 안내 -->
+  <div id="intro" class="hidden">
+    <p>글자를 <b>드래그</b>해 서로 옆에 붙이면 단어가 됩니다.</p>
+    <p class="tiny">영어 사전에 있는 단어라면 무엇이든 만들 수 있고, 길수록 많이 법니다.</p>
+    <p class="tiny">잘못 붙였다면 <b>더블클릭</b>으로 다시 떼어낼 수 있습니다.</p>
+  </div>
+
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/dict.js"></script>
+<script src="js/defs.js"></script>
+<script src="js/data.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/entity.js"></script>
+<script src="js/board.js"></script>
+<script src="js/drag.js"></script>
+<script src="js/behaviors.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/save.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
