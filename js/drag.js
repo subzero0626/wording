@@ -118,13 +118,26 @@ G.drag = (function () {
     paintSnap();
   }
 
-  /** 단어는 실수로 팔리면 아까우니 낱글자·덩어리만 판매 대상 */
-  function sellable(e) { return e && e.type !== 'word'; }
+  /**
+   * 버릴 수 있는 것은 낱글자뿐이다.
+   * 덩어리도 애써 붙여 놓은 것이고 더 긴 단어로 가는 도중일 수 있으니 지키고,
+   * 정말 흩고 싶으면 더블클릭으로 낱글자로 되돌린 뒤 하나씩 버리면 된다.
+   */
+  function sellable(e) { return !!e && e.type === 'letter'; }
+
+  /**
+   * 완성된 단어가 걸려 있는 조합인가.
+   * 붙는 순간 단어 하나가 사라지는 셈이라, 잠깐 대고 있어야 실행된다.
+   * 끌고 있는 쪽이 단어일 때도 마찬가지다 (MOTH 를 E 위에 떨어뜨리는 경우).
+   */
+  function needsHold(target) {
+    return target.type === 'word' || (!!cur && cur.type === 'word');
+  }
 
   /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이려면 시간이 걸린다 */
   function tick(dt) {
     if (!cur) return;
-    if (snap && snap.target.type === 'word') {
+    if (snap && needsHold(snap.target)) {
       holdT += dt;
       if (holdT >= C.WORD_HOLD && !snap.armed) {
         snap.armed = true;
@@ -189,13 +202,18 @@ G.drag = (function () {
      ------------------------------------------------------------------ */
   /**
    * 붙일 수 있는가?
-   * 글자끼리는 아무렇게나 붙일 수 있지만(덩어리가 되어도 괜찮다),
-   * 이미 완성된 단어가 끼어 있을 때는 결과도 반드시 단어여야 한다.
-   * 그래야 실수로 애써 만든 단어를 의미 없는 덩어리로 만들지 않는다.
+   * 글자·덩어리끼리는 아무렇게나 붙일 수 있다 (덩어리가 되어도 괜찮다).
+   *
+   * 완성된 단어가 끼어 있을 때는 결과가 단어이거나, 적어도 글자를 더 붙이면
+   * 단어가 될 조각이어야 한다 — MOTH 에 E 를 붙여 MOTHE 로 두었다가 R 을 마저
+   * 붙여 MOTHER 로 키우는 식이다. 아무 데로도 이어지지 않는 조각이면 애써 만든
+   * 단어가 그냥 망가지는 것이라 막는다. (덩어리는 더블클릭으로 되돌릴 수 있다)
    */
   function allowed(a, b, text) {
     if (text.length > C.MAX_CLUSTER) return false;
-    if (a.type === 'word' || b.type === 'word') return !!G.lookupWord(text);
+    if (a.type === 'word' || b.type === 'word') {
+      return !!G.lookupWord(text) || G.canGrow(text);
+    }
     return true;
   }
 
@@ -239,8 +257,8 @@ G.drag = (function () {
       /* 대상이 바뀌면 "대고 있던 시간" 을 처음부터 */
       if (!snap || snap.target !== o2 || snap.side !== best.side) holdT = 0;
 
-      /* 이미 완성된 단어에 붙이려면 잠깐 대고 있어야 한다 */
-      best.armed = (o2.type !== 'word') || (holdT >= C.WORD_HOLD);
+      /* 단어가 걸려 있으면 잠깐 대고 있어야 한다 */
+      best.armed = !needsHold(o2) || (holdT >= C.WORD_HOLD);
       snap = best;
     } else {
       holdT = 0;
@@ -275,27 +293,36 @@ G.drag = (function () {
     snapEl.style.transform = 'translate(' + (x - 1) + 'px,' + (t.y - t.h / 2 + 3) + 'px)';
     snapEl.classList.add('on');
 
-    /* 완성되는 단어를 미리 알려 준다 (사전이 크기 때문에 이게 없으면 막막하다) */
+    /* 완성되는 단어를 미리 알려 준다 (사전이 크기 때문에 이게 없으면 막막하다).
+       아직 단어가 아니어도 더 붙이면 단어가 될 조각이면 그것도 알려 준다 */
     var text = snapText();
     var kind = G.lookupWord(text);
     var ready = snap.armed !== false;
+    var growing = !kind && text.length >= 4 && G.canGrow(text);
     snapEl.classList.toggle('good', !!kind && ready);
+
+    if (!kind && !growing) { hintEl.classList.remove('on'); return; }
+
     if (kind) {
       var def = G.defFor(text);
       hintEl.querySelector('.sh-t').textContent = text + '  +' + U.money(def.value);
       hintEl.classList.toggle('ability', kind === 'ability');
-      hintEl.classList.toggle('waiting', !ready);
       hintEl.style.color = (kind === 'ability' && ready) ? def.color.fg : '';
-      /* 단어에 붙이는 중이면 진행 막대를 채운다 */
-      var p = (t.type === 'word') ? Math.min(1, holdT / C.WORD_HOLD) : 1;
-      hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
-      var cx = (cur.x + t.x) / 2;
-      hintEl.classList.add('on');
-      hintEl.style.transform = 'translate(' + Math.round(cx) + 'px,' +
-        Math.round(t.y - t.h / 2 - 28) + 'px) translateX(-50%)';
     } else {
-      hintEl.classList.remove('on');
+      hintEl.querySelector('.sh-t').textContent = text + '…';
+      hintEl.classList.remove('ability');
+      hintEl.style.color = '';
     }
+    hintEl.classList.toggle('growing', growing);
+    hintEl.classList.toggle('waiting', !ready);
+
+    /* 단어가 걸려 있으면 진행 막대를 채운다 */
+    var p = needsHold(t) ? Math.min(1, holdT / C.WORD_HOLD) : 1;
+    hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
+    var cx = (cur.x + t.x) / 2;
+    hintEl.classList.add('on');
+    hintEl.style.transform = 'translate(' + Math.round(cx) + 'px,' +
+      Math.round(t.y - t.h / 2 - 28) + 'px) translateX(-50%)';
   }
 
   function clearSnap() {
@@ -333,6 +360,8 @@ G.drag = (function () {
   }
 
   function merge(a, b, text, cx, cy) {
+    /* 붙여 버린다고 불이 꺼지지는 않는다 (물을 대야 한다) */
+    var fire = a.burning ? a.burnTime : (b.burning ? b.burnTime : -1);
     G.board.remove(a);
     G.board.remove(b);
 
@@ -354,6 +383,7 @@ G.drag = (function () {
       G.board.add(ne);
       G.fx.spark(cx, cy, { vx: 0, vy: -14, r: 2, life: .4, c: '160,155,148', a: .6 });
     }
+    if (fire >= 0) { ne.ignite(); ne.burnTime = fire; }
     ne.land();
     return ne;
   }

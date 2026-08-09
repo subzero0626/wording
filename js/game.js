@@ -68,13 +68,16 @@ G.game = (function () {
     requestAnimationFrame(loop);
   }
 
-  /** 첫 판: 바로 한 단어를 만들 수 있게 조금 도와준다 */
+  /**
+   * 첫 판.
+   * 무작위로 뿌리면 자음만 잔뜩 나와 한 단어도 못 만들고 멍하니 기다리게 된다.
+   * 그래서 시작 글자는 정해 둔다 — 이 여덟 개로 CAT · RAT · CARE · STORE ·
+   * SNORE · CRATE · ACTORS … 처럼 여러 갈래가 바로 열린다.
+   */
   function seedBoard() {
-    var seed = ['C', 'A', 'T'];
-    var n = C.START_LETTERS;
-    for (var i = 0; i < n; i++) {
-      var ch = (i < seed.length) ? seed[i] : G.randomLetter();
-      G.board.spawnLetter(ch);
+    var seed = ['C', 'A', 'T', 'R', 'E', 'S', 'O', 'N'];
+    for (var i = 0; i < C.START_LETTERS; i++) {
+      G.board.spawnLetter(seed[i] || G.randomLetter());
     }
   }
 
@@ -160,6 +163,11 @@ G.game = (function () {
     }
     G.board.spawnLetter();
     G.state.spawnTimer = spawnInterval();
+  }
+
+  /** 남은 생성 대기를 당긴다 (WIND · LUCK · 판매) */
+  function hurrySpawn(cut) {
+    G.state.spawnTimer *= cut;
   }
 
   function buySpawnUpgrade() {
@@ -251,6 +259,7 @@ G.game = (function () {
   return {
     init: init,
     spawnInterval: spawnInterval,
+    hurrySpawn: hurrySpawn,
     buySpawnUpgrade: buySpawnUpgrade,
     onWordFormed: onWordFormed,
     freeHint: freeHint,

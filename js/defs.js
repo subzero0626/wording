@@ -83,5 +83,92 @@ G.defs = (function () {
     get(word, function () { });
   }
 
-  return { put: put, get: get, peek: peek, prefetch: prefetch, POS_KO: POS_KO };
+  /* ------------------------------------------------------------------
+     한글 뜻 손질
+     --------------------------------------------------------------------
+     원본은 한영사전을 영→한으로 뒤집은 것이라 두 가지 문제가 있다.
+       · 후보가 콤마로 서너 개 붙어 있는데 뒤로 갈수록 잘 안 쓰는 말이다
+       · 표제어에서 떨어져 나온 조각이 섞여 있다 ("에게 잔소리하다", "구균의 뜻")
+     조각을 걸러 내고, 품사에 맞는 것을 앞세워 둘까지만 보여 준다.
+     ------------------------------------------------------------------ */
+
+  var JUNK_HEAD = /^(로|에게|에|의|을|를|이|가|와|과|으로)\s/;
+  var JUNK_TAIL = /의\s?(뜻|고어체|부정형|단수|복수|약자|이형|변형)$/;
+
+  /* 한 글자짜리도 버리면 안 된다 — 불 · 물 · 쥐 처럼 가장 흔한 뜻이 그렇다 */
+  function usable(s) {
+    if (!s || !/[가-힣]/.test(s)) return false;
+    return !JUNK_HEAD.test(s) && !JUNK_TAIL.test(s);
+  }
+
+  function isVerb(s) { return /다$/.test(s); }
+  function isAdverb(s) { return /(히|게)$/.test(s); }
+  function isAdj(s) { return /(는|한|운|픈|쁜)$/.test(s); }
+
+  /** 이 후보가 그 품사에 얼마나 어울리는가 (클수록 앞으로) */
+  function fit(s, pos) {
+    if (pos === 'v') return isVerb(s) ? 2 : 0;
+    if (pos === 'r') return isAdverb(s) ? 2 : 0;
+    if (pos === 'a') return isAdj(s) ? 2 : (isVerb(s) ? 1 : 0);
+    return (isVerb(s) || isAdverb(s)) ? 0 : 2;     // 명사
+  }
+
+  /**
+   * 어형변화형의 뜻을 그 모양에 맞춰 바꾼다.
+   *   ACTED   출연하다 → 출연한
+   *   ADDING  가하다   → 가하고 있는
+   *   CATS    고양이   → 고양이들
+   *   -LY     걷다     → 걷게
+   *
+   * 한국어는 어간마다 활용이 달라서 -ED 를 억지로 "은" 으로 만들면 틀린 말이
+   * 나온다 (걷다 → 걷은 ✗). "하다" 로 끝날 때만 "한" 을 붙이고, 그 밖에는
+   * 어떤 어간에나 그대로 붙는 "던" 을 쓴다 (걷던 · 먹던 · 오던).
+   */
+  function inflect(s, word, base) {
+    if (isVerb(s)) {
+      var stem = s.slice(0, -1);                   // 걷다 → 걷 / 출연하다 → 출연하
+      if (/ING$/.test(word)) return stem + '고 있는';
+      if (/LY$/.test(word)) return stem + '게';
+      if (/ED$/.test(word)) {
+        return /하$/.test(stem) ? stem.slice(0, -1) + '한' : stem + '던';
+      }
+      return s;
+    }
+
+    /* 복수형에는 "들" 을 붙인다.
+       원형이 이미 S 로 끝나면 이 S 는 복수 표시가 아니므로 건드리지 않고,
+       이름씨 꼴로 끝나는 후보에만 붙인다 (부사·형용사·감탄사는 제외). */
+    if (/S$/.test(word) && !/S$/.test(base) &&
+      !isAdverb(s) && !isAdj(s) && /[가-힣]$/.test(s) && !/들$/.test(s)) {
+      return s + '들';
+    }
+    return s;
+  }
+
+  /** 팝오버에 보여줄 한글 뜻 */
+  function koText(info) {
+    if (!info || !info.ko) return '';
+    var parts = info.ko.split(','), keep = [], i, s;
+    for (i = 0; i < parts.length; i++) {
+      s = parts[i].trim();
+      if (usable(s)) keep.push(s);
+    }
+    if (!keep.length) return '';
+
+    keep.sort(function (a, b) { return fit(b, info.pos) - fit(a, info.pos); });
+
+    /* 변화형일 때만 모양을 바꾼다. SEED · FEED 처럼 원래 -ED 로 끝나는
+       단어까지 과거형으로 읽어 버리면 안 되기 때문이다. */
+    var out = [];
+    for (i = 0; i < keep.length && out.length < 2; i++) {
+      var t = info.base ? inflect(keep[i], info.word, info.base) : keep[i];
+      if (out.indexOf(t) < 0) out.push(t);
+    }
+    return out.join(', ');
+  }
+
+  return {
+    put: put, get: get, peek: peek, prefetch: prefetch,
+    koText: koText, POS_KO: POS_KO
+  };
 })();

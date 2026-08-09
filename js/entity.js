@@ -39,7 +39,7 @@ var G = window.G || (window.G = {});
     this.calm = false;
     this.incomeMul = 1;
     this.speedMul = 1;
-    this.hazardMul = 1;
+    this.hazardMul = 1;       // 위험(화재)이 쌓이는 속도. TIME 이 늦춘다
     this.suppress = 0;
     this.age = 0;
     this.data = {};
@@ -73,6 +73,29 @@ var G = window.G || (window.G = {});
     this.el = el; this.inner = inner; this.body = body; this.dgEl = dg;
     this.renderText();
     this.applyStyle();
+  };
+
+  /** 머리 위 쪽지 (조리 상태, 상자에 잠긴 값 …). 빈 값이면 지운다 */
+  Entity.prototype.setBadge = function (text, tone) {
+    if (!this.el) return;
+    if (!text) {
+      if (this.badgeEl) { this.el.removeChild(this.badgeEl); this.badgeEl = null; }
+      this.badgeText = '';
+      return;
+    }
+    if (!this.badgeEl) {
+      this.badgeEl = document.createElement('div');
+      this.badgeEl.className = 'badge';
+      this.el.appendChild(this.badgeEl);
+    }
+    if (this.badgeText !== text) {
+      this.badgeText = text;
+      this.badgeEl.innerHTML = text;
+    }
+    if (this.badgeTone !== tone) {
+      this.badgeTone = tone;
+      this.badgeEl.className = 'badge' + (tone ? ' ' + tone : '');
+    }
   };
 
   Entity.prototype.renderText = function () {
@@ -139,6 +162,11 @@ var G = window.G || (window.G = {});
       this.frzShown = frz;
       this.el.classList.toggle('frozen', frz);
     }
+    var tamed = this.suppress > 0;
+    if (this.tamedShown !== tamed) {
+      this.tamedShown = tamed;
+      this.el.classList.toggle('tamed', tamed);
+    }
   };
 
   /* ------------------------------------------------------------------
@@ -150,6 +178,15 @@ var G = window.G || (window.G = {});
     if (this.type === 'letter') return C.PAY_BASE;
     if (this.type === 'cluster') return C.PAY_BASE * this.text.length;
     return (this.def.value || 0);
+  };
+
+  /** 익어 가는 정도 (0~1). 이만큼 노릇해진다 */
+  Entity.prototype.setCook = function (p) {
+    p = Math.max(0, Math.min(1, p));
+    var q = Math.round(p * 12) / 12;
+    if (this.cookShown === q) return;
+    this.cookShown = q;
+    if (this.el) this.el.style.setProperty('--cook', q.toFixed(2));
   };
 
   /* ------------------------------------------------------------------

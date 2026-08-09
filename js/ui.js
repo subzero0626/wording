@@ -113,9 +113,8 @@ G.ui = (function () {
       lastMoneyShown = m;
       elMoneyVal.textContent = U.num(m);
     }
-    var total = G.game.spawnInterval();
     var left = G.state.spawnTimer;
-    var p = U.clamp(1 - left / total, 0, 1);
+    var p = U.clamp(1 - left / G.game.spawnInterval(), 0, 1);
     elGaugeBar.style.width = (p * 100).toFixed(1) + '%';
     elGaugeText.textContent = (G.board.count() >= C.MAX_ENTITIES)
       ? '보드가 가득 찼다'
@@ -233,7 +232,7 @@ G.ui = (function () {
       }
       posEl.textContent = info.posKo;
       baseEl.textContent = info.base ? (info.base + ' 의 변화형') : '';
-      koEl.textContent = info.ko || '';
+      koEl.textContent = G.defs.koText(info);
       glossEl.textContent = info.gloss;
     });
 

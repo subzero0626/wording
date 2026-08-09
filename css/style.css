@@ -105,6 +105,9 @@ button{
 #snaphint.ability{ border-color:currentColor; }
 /* 이미 완성된 단어에 붙이는 중 — 다 찰 때까지 기다려야 한다 */
 #snaphint.waiting{ color:var(--ink-3); border-style:dashed; }
+/* 아직 단어는 아니지만 더 붙이면 단어가 되는 조각 */
+#snaphint.growing{ color:var(--ink-3); font-weight:650; letter-spacing:.1em; }
+#snaphint.growing .sh-p{ background:var(--ink-3); }
 #snaphint .sh-p{
   position:absolute; left:0; bottom:0; height:2px; width:0;
   background:var(--money); border-radius:2px;
@@ -158,7 +161,11 @@ button{
 }
 
 .ent .inner{
-  transition:transform .14s cubic-bezier(.2,.8,.3,1);
+  transition:transform .14s cubic-bezier(.2,.8,.3,1), filter .5s linear;
+  /* 불 곁에서 익어 가는 것은 점점 노릇해진다 (--cook 0 → 1) */
+  filter:sepia(calc(var(--cook,0) * .85))
+         saturate(calc(1 + var(--cook,0) * .5))
+         brightness(calc(1 - var(--cook,0) * .22));
 }
 .ent.drag .inner{ transform:scale(1.1); }
 
@@ -237,6 +244,29 @@ button{
   0%,100%{ transform:translateX(0); } 25%{ transform:translateX(.9px); } 75%{ transform:translateX(-.9px); }
 }
 .ent.frozen .body{ filter:saturate(.45) brightness(1.06); }
+/* 물을 뒤집어써 잠시 기가 죽은 FIRE */
+.ent.tamed .body{ filter:saturate(.35) brightness(.94); opacity:.72; }
+
+/* 머리 위 쪽지 — 조리 상태, 상자에 잠긴 값 */
+.ent .badge{
+  position:absolute; left:50%; bottom:calc(100% + 4px);
+  transform:translateX(-50%);
+  white-space:nowrap; pointer-events:none;
+  padding:2px 7px; border-radius:9px;
+  font-size:10.5px; font-weight:700; letter-spacing:.02em;
+  color:#4a4640; background:rgba(255,253,247,.94);
+  border:1px solid rgba(120,112,100,.3);
+  box-shadow:0 2px 6px rgba(40,36,30,.12);
+}
+.ent .badge b{ color:#17150f; }
+.ent .badge.warn{
+  color:#8a3c0c; border-color:rgba(210,110,50,.5);
+  background:rgba(255,246,235,.96);
+  animation:badgePulse .7s ease-in-out infinite;
+}
+.ent .badge.good{ color:#256b4a; border-color:rgba(70,150,110,.45); }
+@keyframes badgePulse{ 0%,100%{ opacity:1; } 50%{ opacity:.5; } }
+
 .ent.held .body{ opacity:.78; }
 
 /* 단어별 기본 애니메이션 */
@@ -269,6 +299,7 @@ button{
 @keyframes tokenIn{ from{ transform:scale(.3); opacity:0; } }
 .token:hover{ transform:scale(1.12); }
 .token.gone{ animation:dying .25s ease-in forwards; }
+
 
 /* --------------------------------------------------------------------------
    상단 UI

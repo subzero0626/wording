@@ -92,14 +92,6 @@ G.fx = (function () {
         c: '70,150,205', a: .7
       });
     },
-    frost: function (e, s) {                    // ICE
-      if (Math.random() > 0.07 * s) return;
-      spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-e.h * .4, e.h * .4), {
-        vx: U.rand(-3, 3), vy: U.rand(-4, 4),
-        r: U.rand(.8, 1.6), life: U.rand(.9, 1.5),
-        c: '150,215,235', a: .8, shape: 'cross', drag: .96
-      });
-    },
     leaf: function (e, s) {                     // TREE
       if (Math.random() > 0.035 * s) return;
       spark(e.x + U.rand(-e.w * .45, e.w * .45), e.y - e.h * .1, {
@@ -147,6 +139,18 @@ G.fx = (function () {
         c: '150,150,180', a: .35, drag: .96
       });
     },
+    tickmark: function (e, s) {                 // CLOCK
+      if (Math.random() > 0.02 * s) return;
+      ring(e.x, e.y, { r0: 8, r1: 120, life: 1.1, c: '120,118,112', lw: 1 });
+    },
+    frost: function (e, s) {                    // ICE
+      if (Math.random() > 0.07 * s) return;
+      spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-e.h * .4, e.h * .4), {
+        vx: U.rand(-3, 3), vy: U.rand(-4, 4),
+        r: U.rand(.8, 1.6), life: U.rand(.9, 1.5),
+        c: '150,215,235', a: .8, shape: 'cross', drag: .96
+      });
+    },
     ripple: function (e, s) {                   // TIME
       if (Math.random() > 0.012 * s) return;
       ring(e.x, e.y, { r0: e.w * .5, r1: e.w * .5 + 26, life: 1.4, c: '140,120,190', lw: 1 });
@@ -155,9 +159,37 @@ G.fx = (function () {
       if (Math.random() > 0.02 * s) return;
       ring(e.x, e.y, { r0: 150, r1: 20, life: .9, c: '170,80,100', lw: 1 });
     },
-    tickmark: function (e, s) {                 // CLOCK
-      if (Math.random() > 0.02 * s) return;
-      ring(e.x, e.y, { r0: 8, r1: 120, life: 1.1, c: '120,118,112', lw: 1 });
+    steam: function (e, s) {                    // STEAM
+      if (Math.random() > 0.4 * s) return;
+      spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y - e.h * .2, {
+        vx: U.rand(-6, 6), vy: U.rand(-30, -16), g: -12,
+        r: U.rand(2.5, 5), life: U.rand(.8, 1.4),
+        c: '205,215,220', a: .35, drag: .97
+      });
+    },
+    grit: function (e, s) {                     // SAND
+      if (Math.random() > 0.09 * s) return;
+      spark(e.x + U.rand(-e.w * .45, e.w * .45), e.y + e.h * .3, {
+        vx: U.rand(-10, 10), vy: U.rand(-6, -1), g: 26,
+        r: U.rand(.8, 1.4), life: U.rand(.5, .9),
+        c: '200,180,130', a: .6
+      });
+    },
+    shine: function (e, s) {                    // GLASS
+      if (Math.random() > 0.03 * s) return;
+      var a = U.rand(0, Math.PI * 2);
+      spark(e.x + Math.cos(a) * e.w * .45, e.y + Math.sin(a) * e.h * .4, {
+        vx: Math.cos(a) * 16, vy: Math.sin(a) * 16,
+        r: U.rand(1, 1.8), life: .7, c: '190,225,235', a: .9, shape: 'star', drag: .93
+      });
+    },
+    savory: function (e, s) {                   // ROAST
+      if (Math.random() > 0.3 * s) return;
+      spark(e.x + U.rand(-e.w * .35, e.w * .35), e.y - e.h * .25, {
+        vx: U.rand(-5, 5), vy: U.rand(-22, -12), g: -8,
+        r: U.rand(1.8, 3.4), life: U.rand(.9, 1.5),
+        c: '200,170,140', a: .3, drag: .97
+      });
     },
     smoke: function (e, s) {                    // 불타는 중
       if (Math.random() > 0.5 * s) return;
@@ -210,16 +242,26 @@ G.fx = (function () {
     }
   }
 
-  /** 접촉 진행도 표시: 두 오브젝트 사이에 점이 늘어난다 (FIRE ••• HOUSE) */
-  function dangerDots(ax, ay, bx, by, t, dt) {
+  /** 접촉 진행도 표시: 두 오브젝트 사이에 점이 늘어난다 */
+  function dots(ax, ay, bx, by, t, dt, c) {
     if (!enabled) return;
     if (Math.random() > t * 0.9 * dt * 60 * 0.12) return;
     var k = U.rand(.2, .8);
     spark(U.lerp(ax, bx, k), U.lerp(ay, by, k), {
       vx: (bx - ax) * .12, vy: (by - ay) * .12 - 8, g: -4,
       r: U.rand(1, 1.8 + t), life: U.rand(.4, .7),
-      c: '235,120,50', a: .3 + t * .6
+      c: c, a: .3 + t * .6
     });
+  }
+
+  /** 위험이 쌓이는 중 (FIRE ••• HOUSE) */
+  function dangerDots(ax, ay, bx, by, t, dt) {
+    dots(ax, ay, bx, by, t, dt, '235,120,50');
+  }
+
+  /** 좋은 것이 익어 가는 중 (FIRE ••• MEAT) */
+  function linkDots(ax, ay, bx, by, t, dt) {
+    dots(ax, ay, bx, by, t, dt, '240,190,70');
   }
 
   /* ------------------------------------------------------------------
@@ -307,7 +349,8 @@ G.fx = (function () {
   return {
     init: init, resize: resize, update: update, render: render,
     ambient: ambient, burst: burst, splash: splash, coins: coins,
-    ring: ring, line: line, spark: spark, dangerDots: dangerDots,
+    ring: ring, line: line, spark: spark,
+    dangerDots: dangerDots, linkDots: linkDots,
     setEnabled: setEnabled,
     count: function () { return P.length; }
   };

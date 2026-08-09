@@ -211,12 +211,13 @@ G.board = (function () {
   function step(dt) {
     var i, e;
 
-    /* 1. 필드 효과 초기화 (CLOCK/TIME 이 매 프레임 다시 칠한다) */
+    /* 1. 필드 효과 초기화 (CLOCK/LAMP 같은 장 효과가 매 프레임 다시 칠한다) */
     for (i = 0; i < ents.length; i++) {
       e = ents[i];
       e.speedMul = 1;
       e.hazardMul = 1;
       e.incomeMul = 1;
+      e.stoke = 1;            // COAL 이 지핀 불은 더 빨리 굽고 태운다
       e.calm = false;
       e.heldBy = null;
     }
