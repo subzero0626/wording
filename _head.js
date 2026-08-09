@@ -79,6 +79,10 @@ G.ui.toast = m => log.push(m.replace(/<[^>]+>/g, ''));
 G.board.layout(1000, 660);
 
 const DT = 1 / 30;
-const clear = () => { for (const e of G.board.all().slice()) G.board.remove(e); log.length = 0; };
+const clear = () => {
+  for (const e of G.board.all().slice()) G.board.remove(e);
+  G.tokens.clearAll();
+  log.length = 0;
+};
 
 module.exports = { G, C, DT, log, clear };

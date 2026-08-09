@@ -52,7 +52,7 @@
     </div>
     <div class="tk-note">도감에서 잠긴 칸을 누르면 한 단계씩 열립니다</div>
     <div class="tk-buys"></div>
-    <div class="tk-next">한 장 살 때마다 <b>20w</b> 씩 오릅니다</div>
+    <div class="tk-next">한 장 살 때마다 <b>10w</b> 씩 오릅니다</div>
   </div>
   <button id="pauseBtn" aria-label="일시정지 · 설정" data-tip="일시정지 · 설정">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -66,15 +66,13 @@
   <aside id="codex">
     <header>
       <h2>도감</h2>
-      <span id="codexCount">0 / 51</span>
+      <span id="codexCount">0 / 35</span>
+      <!-- 힌트권은 도감 개수 옆에 — 찾은 수와 쓸 수 있는 장수를 나란히 본다 -->
+      <div id="codexTickets" role="button" data-tip="눌러서 힌트권 사기">
+        <b class="ct-n">0</b><span class="ct-t">힌트권</span>
+      </div>
       <button id="codexClose" aria-label="닫기">✕</button>
     </header>
-    <!-- 힌트권을 어떻게 쓰는지 도감 안에서 바로 알 수 있게 띠를 하나 둔다 -->
-    <div id="codexTickets" role="button">
-      <span class="ct-t">힌트권</span>
-      <b class="ct-n">0장</b>
-      <span class="ct-how">잠긴 칸을 누르면 한 단계씩 열립니다</span>
-    </div>
     <div id="codexList"></div>
     <footer>보드에서 글자를 끌어다 붙이면 단어가 됩니다.</footer>
   </aside>

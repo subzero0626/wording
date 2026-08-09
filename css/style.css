@@ -114,6 +114,9 @@ button{
   transition:width .08s linear;
 }
 #snaphint.waiting .sh-p{ background:var(--ink-3); }
+/* 강화대 위 — 잃을 수도 있는 일이라 색으로 먼저 알린다 */
+#snaphint.risky{ color:#7a4f9c; border-color:rgba(122,79,156,.5); border-style:solid; }
+#snaphint.risky .sh-p{ background:#7a4f9c; }
 
 /* 보드 밖으로 끌어냈을 때 */
 /* 판매 대기 중인 글자 */
@@ -166,6 +169,12 @@ button{
   filter:sepia(calc(var(--cook,0) * .85))
          saturate(calc(1 + var(--cook,0) * .4))
          brightness(calc(1 - var(--cook,0) * .5));
+}
+/* 다 타 가는 숯은 하얗게 바랜다 — 남은 시간을 세어 주는 대신 이것으로 알린다 */
+.ent.ripe-ash .inner{
+  filter:grayscale(1)
+         brightness(calc(1 + var(--cook,0) * .5))
+         contrast(calc(1 - var(--cook,0) * .5));
 }
 /* 싹트는 것은 노릇해지는 대신 푸르러진다 */
 .ent.ripe-green .inner{
@@ -279,6 +288,26 @@ button{
 
 .ent.held .body{ opacity:.78; }
 
+/* 강화 별 — 글자 왼쪽 위 모서리에 비스듬히 붙는다.
+   숫자로 "3강" 이라 적으면 보드가 계산표가 되므로 별의 개수로만 알린다 */
+.ent .stars{
+  position:absolute; right:calc(100% - 7px); bottom:calc(100% - 8px);
+  display:flex; gap:1px; pointer-events:none;
+}
+.ent .stars i{
+  width:7px; height:7px; display:block;
+  background:linear-gradient(160deg, #f0d886, #c99a2e);
+  clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+  filter:drop-shadow(0 1px 1px rgba(70,50,10,.35));
+}
+.ent .stars[data-n="3"] i{
+  background:linear-gradient(160deg, #fff0b8, #e0a92c);
+  animation:starTwinkle 1.8s ease-in-out infinite;
+}
+.ent .stars[data-n="3"] i:nth-child(2){ animation-delay:.25s; }
+.ent .stars[data-n="3"] i:nth-child(3){ animation-delay:.5s; }
+@keyframes starTwinkle{ 0%,100%{ opacity:1; } 50%{ opacity:.55; } }
+
 /* 단어별 기본 애니메이션 */
 .anim-shake .body{ animation:aShake 1.6s ease-in-out infinite; }
 @keyframes aShake{ 0%,100%{ transform:rotate(-.5deg); } 50%{ transform:rotate(.5deg); } }
@@ -309,6 +338,27 @@ button{
 @keyframes tokenIn{ from{ transform:scale(.3); opacity:0; } }
 .token:hover{ transform:scale(1.12); }
 .token.gone{ animation:dying .25s ease-in forwards; }
+
+/* STAR 가 떨군 힌트권 — 도감 머리글의 알약과 같은 초록으로 맞춰,
+   주우면 저 숫자가 오른다는 것이 색만 보고도 이어지게 한다 */
+.token.ticket{
+  background:linear-gradient(180deg,#f0faf4,#d6ecdf);
+  border-color:#8dbba4; color:#2f6b52;
+}
+.token.ticket svg{ width:21px; height:14px; overflow:visible; }
+.token.ticket .tk-face{ fill:currentColor; }
+.token.ticket .tk-perf{
+  stroke:#f0faf4; stroke-width:1.5; stroke-linecap:round; stroke-dasharray:1.6 2.4;
+}
+
+/* SHOP 이 흘린 잔돈 — 재화 색을 그대로 써서 돈이라는 것이 바로 읽히게 한다 */
+.token.coin{
+  background:linear-gradient(180deg,#fff3d2,#f2d590);
+  border-color:#d8b055; color:#8a6516;
+}
+.token.coin svg{ width:19px; height:19px; }
+.token.coin .tk-face{ fill:currentColor; }
+.token.coin .tk-perf{ fill:none; stroke:#fff3d2; stroke-width:1.6; }
 
 
 /* --------------------------------------------------------------------------
@@ -497,8 +547,6 @@ button{
   font-size:11px; color:var(--money); font-weight:650; margin-bottom:11px;
   font-variant-numeric:tabular-nums;
 }
-/* 액수가 아니라 문장이 들어가는 줄 — 조금 눕혀서 숫자와 구분한다 */
-#wordPop .wp-pay.note{ font-weight:600; font-style:italic; line-height:1.5; }
 #wordPop .wp-break{ background:#efece6; color:var(--ink-2); }
 
 /* --------------------------------------------------------------------------
@@ -583,56 +631,64 @@ button{
 .cx .d{ font-size:11.5px; color:var(--ink-2); line-height:1.5; margin-top:3px; }
 /* 설명에 나오지만 아직 못 찾은 단어 */
 .cx .d .q{ font-style:normal; color:var(--ink-3); letter-spacing:.12em; }
-.cx.locked .n{ color:var(--ink-3); font-weight:600; letter-spacing:.14em; }
+.cx.locked .n{ color:#b3aea5; font-weight:600; letter-spacing:.14em; }
+.cx.locked .n b{ color:var(--ink); font-weight:800; }
 .cx.locked .dot{ background:#e4e0d9; }
 /* 잠긴 칸은 칸 자체가 버튼이다. 따로 버튼을 두면 좁은 도감이 더 좁아지고,
-   누를 곳을 한 번 더 겨냥해야 한다. 대신 눌러도 되는 자리라는 것과
-   눌러서 무엇이 열리는지는 한눈에 보여야 한다. */
+   누를 곳을 한 번 더 겨냥해야 한다.
+   값은 줄 오른쪽 끝에 하나만 세워 둔다 — 오른쪽 끝을 따라 눈으로 훑으면
+   어디가 몇 장인지 한 번에 들어온다. */
 .cx.askable{ cursor:pointer; }
 .cx.askable:hover{ background:rgba(60,110,90,.07); }
 .cx.askable:active{ background:rgba(60,110,90,.12); }
-.cx .ask{
-  display:flex; align-items:center; gap:6px;
-  margin-top:5px; font-size:10.5px; letter-spacing:.02em;
-  font-variant-numeric:tabular-nums;
-}
-/* 몇 단계까지 열렸는지 */
-.cx .pips{ display:flex; gap:2.5px; flex:none; }
-.cx .pip{
-  width:5px; height:5px; border-radius:99px;
-  border:1px solid var(--line-2); background:transparent;
-}
-.cx .pip.on{ background:var(--money); border-color:var(--money); }
-.cx .ask .cost{
-  flex:none; padding:1.5px 6px; border-radius:99px;
-  background:rgba(60,110,90,.10); color:var(--money); font-weight:650;
-}
-.cx .ask .gain{ color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cx.askable:hover .ask .cost{ background:rgba(60,110,90,.2); }
-/* 장수가 모자라면 눌러도 안 되는 것이 보여야 한다 */
-.cx .ask.poor .cost{ background:rgba(44,42,39,.07); color:var(--ink-3); font-weight:600; }
-.cx .ask.poor .pip.on{ background:var(--ink-3); border-color:var(--ink-3); }
-.cx .mid{ flex:1; min-width:0; }
 
-/* 힌트권 띠 — 도감 안에서 몇 장 들었는지와 쓰는 법을 같이 알려 준다 */
-#codexTickets{
-  display:flex; align-items:center; gap:7px;
-  padding:9px 20px; cursor:pointer;
-  border-bottom:1px solid var(--line);
-  background:rgba(60,110,90,.05);
+/* 찾은 칸을 누르면 수치까지 적힌 설명으로 바뀐다.
+   따로 버튼을 달지 않는다 — 칸 전체가 이미 누를 수 있는 것이고,
+   펼친 칸은 왼쪽에 선이 서서 지금 무엇을 보고 있는지 알려 준다 */
+.cx.deepable{ cursor:pointer; }
+.cx.deepable .k::after{
+  content:'자세한 수치를 보려면 클릭'; margin-left:7px; padding:0 4px;
+  border:1px solid rgba(44,42,39,.16); border-radius:5px;
+  font-size:9px; letter-spacing:.02em; color:var(--ink-3); opacity:0;
+  transition:opacity .12s;
+}
+.cx.deepable:hover .k::after{ opacity:1; }
+/* 손가락으로 보는 화면에는 마우스를 올려 둘 수가 없다 — 거기서는 늘 보이게 둔다 */
+@media (hover:none){ .cx.deepable .k::after{ opacity:.7; } }
+.cx.deep{ background:rgba(44,42,39,.045); box-shadow:inset 2px 0 0 var(--money); }
+.cx.deep .k::after{ content:'설명으로 돌아가려면 클릭'; opacity:1; }
+.cx.deep .d{ color:var(--ink); }
+.cx .ask{
+  flex:none; align-self:center; margin-left:8px;
+  min-width:34px; padding:4px 8px; border-radius:8px;
+  background:rgba(60,110,90,.12); color:var(--money);
+  font-size:13px; font-weight:750; line-height:1;
+  text-align:center; white-space:nowrap;
+  font-variant-numeric:tabular-nums;
   transition:background .14s;
 }
-#codexTickets:hover{ background:rgba(60,110,90,.11); }
-#codexTickets .ct-t{ font-size:11px; color:var(--ink-2); letter-spacing:.04em; flex:none; }
+.cx .ask em{ font-style:normal; font-size:9.5px; font-weight:600; opacity:.75; margin-left:1px; }
+.cx.askable:hover .ask{ background:rgba(60,110,90,.24); }
+/* 장수가 모자라면 눌러도 안 된다는 것이 보여야 한다 */
+.cx .ask.poor{ background:rgba(44,42,39,.06); color:var(--ink-3); font-weight:650; }
+.cx .mid{ flex:1; min-width:0; }
+
+/* 힌트권 — 머리글의 "0 / 35" 바로 옆. 찾은 수와 쓸 수 있는 장수는 같이 봐야 하는 숫자다.
+   따로 띠를 깔면 목록이 한 줄 밀려 내려가기만 하고 눈길은 오히려 흩어졌다. */
+#codexTickets{
+  display:flex; align-items:baseline; gap:4px;
+  align-self:center; padding:3px 8px 4px; border-radius:99px;
+  background:rgba(60,110,90,.12); cursor:pointer;
+  transition:background .14s;
+}
+#codexTickets:hover{ background:rgba(60,110,90,.24); }
 #codexTickets .ct-n{
-  font-size:13px; font-weight:750; color:var(--money);
-  font-variant-numeric:tabular-nums; flex:none;
+  font-size:12.5px; font-weight:750; color:var(--money);
+  font-variant-numeric:tabular-nums; line-height:1;
 }
-#codexTickets.empty .ct-n{ color:var(--ink-3); }
-#codexTickets .ct-how{
-  margin-left:auto; font-size:10px; color:var(--ink-3);
-  text-align:right; line-height:1.35;
-}
+#codexTickets .ct-t{ font-size:9.5px; color:var(--money); opacity:.7; letter-spacing:.03em; }
+#codexTickets.empty{ background:rgba(44,42,39,.06); }
+#codexTickets.empty .ct-n, #codexTickets.empty .ct-t{ color:var(--ink-3); }
 
 /* --------------------------------------------------------------------------
    일시정지 / 토스트 / 인트로

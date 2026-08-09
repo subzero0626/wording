@@ -2,10 +2,10 @@
    behaviors.js — 단어의 행동
    --------------------------------------------------------------------------
    FIELDS[단어]  : 매 프레임 지속되는 "장(場)" 효과 (끌어당김, 얼림, 가속…)
-   ACTIONS[key]  : def.actEvery 주기로 한 번씩 일어나는 사건
+   ACTIONS[key]  : 20초마다 def.actChance 확률로 한 번씩 일어나는 사건
    BONDS[key]    : "가까이 + 일정 시간" 이 유지되어야 발동하는 상호작용
 
-   단어는 자기 뜻대로 행동한다. FIRE 는 태우고 BUG 는 갉는다.
+   단어는 자기 뜻대로 행동한다. FIRE 는 태우고 COAL 은 그 불을 지핀다.
    그것이 이득이 될지 손해가 될지는 플레이어가 어디에 놓느냐가 정한다.
    ========================================================================== */
 var G = window.G || (window.G = {});
@@ -65,22 +65,39 @@ G.contacts = (function () {
 })();
 
 /* --------------------------------------------------------------------------
-   SHOP 토큰 (클릭해서 줍는 특가)
+   바닥에 떨어진 것들 (STAR 가 떨군 힌트권, SHOP 이 흘린 잔돈)
+   --------------------------------------------------------------------------
+   가만히 두면 사라진다. 방치형 게임이라 대부분은 저절로 굴러가지만,
+   화면을 보고 있을 때만 얻는 것이 하나쯤은 있어야 켜 둘 이유가 생긴다.
+   손이 늦는 것이 아깝다면 MOUSE 를 세워 두면 된다 — 종류를 가리지 않고 주워 온다.
    -------------------------------------------------------------------------- */
 G.tokens = (function () {
   var list = [];
   var layer;
 
+  /* 표 모양 — 양옆이 오목하게 파인 쪽지에 점선 하나 */
+  var ICON =
+    '<svg viewBox="0 0 30 20" aria-hidden="true">' +
+    '<path class="tk-face" d="M3 2h24a1 1 0 0 1 1 1v3.1a3.9 3.9 0 0 0 0 7.8V17a1 1 0 0 1-1 1H3' +
+    'a1 1 0 0 1-1-1v-3.1a3.9 3.9 0 0 0 0-7.8V3a1 1 0 0 1 1-1z"/>' +
+    '<path class="tk-perf" d="M20.5 4.6v10.8"/></svg>';
+
+  /* 동전 — 테두리와 가운데 홈 */
+  var COIN =
+    '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<circle class="tk-face" cx="12" cy="12" r="10"/>' +
+    '<circle class="tk-perf" cx="12" cy="12" r="5.6"/></svg>';
+
   function init() { layer = document.getElementById('layer'); }
 
-  function spawn(x, y, value) {
+  function drop(kind, cls, html, x, y, life, value) {
     var el = document.createElement('div');
-    el.className = 'token';
-    el.textContent = 'w';
+    el.className = 'token ' + cls;
+    el.innerHTML = html;
     el.style.left = (x - 17) + 'px';
     el.style.top = (y - 17) + 'px';
-    layer.appendChild(el);
-    var t = { el: el, x: x, y: y, value: value, life: 0, max: 16 };
+    if (layer) layer.appendChild(el);
+    var t = { el: el, x: x, y: y, life: 0, max: life, kind: kind, value: value || 0 };
     el.addEventListener('pointerdown', function (ev) {
       ev.stopPropagation();
       take(t);
@@ -89,12 +106,41 @@ G.tokens = (function () {
     return t;
   }
 
+  /** 힌트권 한 장을 바닥에 떨군다 */
+  function spawnTicket(x, y) {
+    return drop('ticket', 'ticket', ICON, x, y, G.C.TICKET_DROP_LIFE);
+  }
+
+  /** 잔돈 한 닢을 바닥에 흘린다 */
+  function spawnCoin(x, y, value) {
+    return drop('coin', 'coin', COIN, x, y, G.C.COIN_DROP_LIFE, Math.max(1, Math.round(value)));
+  }
+
+  /** 이 자리에서 가장 가까운 것 (MOUSE 가 주우러 간다) */
+  function nearestToken(x, y) {
+    var best = null, bd = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.dead) continue;
+      var d = G.util.dist(x, y, t.x, t.y);
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
+
   function take(t) {
     if (t.dead) return;
     t.dead = true;
-    G.board.earn(t.value);
-    G.ui.floatMoney(t.x, t.y, t.value);
-    G.fx.coins(t.x, t.y, 10);
+    if (t.kind === 'coin') {
+      G.board.earn(t.value);
+      G.ui.floatMoney(t.x, t.y - 10, t.value);
+      G.fx.burst(t.x, t.y, '210,180,110', 14, 74);
+    } else {
+      G.state.tickets = (G.state.tickets || 0) + 1;
+      G.fx.burst(t.x, t.y, '215,195,120', 14, 74);
+      G.ui.toast('힌트권을 주웠다');
+      if (G.ui.renderCodex) G.ui.renderCodex();
+    }
     kill(t);
   }
 
@@ -111,7 +157,10 @@ G.tokens = (function () {
       var t = list[i];
       t.life += dt;
       if (t.life > t.max) { t.dead = true; kill(t); continue; }
-      if (t.life > t.max - 4) t.el.style.opacity = String(0.25 + 0.75 * Math.abs(Math.sin(t.life * 6)));
+      /* 사라지기 전 몇 초는 깜빡여서 재촉한다 */
+      if (t.life > t.max - 5) {
+        t.el.style.opacity = String(0.3 + 0.7 * Math.abs(Math.sin(t.life * 6)));
+      }
     }
   }
 
@@ -120,7 +169,9 @@ G.tokens = (function () {
   }
 
   return {
-    init: init, spawn: spawn, step: step, clearAll: clearAll,
+    init: init, spawnTicket: spawnTicket, spawnCoin: spawnCoin,
+    step: step, clearAll: clearAll,
+    nearest: nearestToken, take: take,
     count: function () { return list.length; }
   };
 })();
@@ -148,6 +199,24 @@ G.behaviors = (function () {
      단어에 적힌 range 는 중심 사이 거리가 아니라 글자 사이의 빈 틈으로 읽는다.
      그래야 DIAMOND 처럼 긴 단어가 공짜로 넓은 사정거리를 갖지 않는다.
      ------------------------------------------------------------------ */
+
+  /**
+   * 같은 단어에서 오는 효과는 이번 프레임에 한 번만 받는다.
+   *
+   * 해를 넷 세워 두면 한 단어의 벌이 주기가 네 번 당겨졌었다. 그러면 보드를
+   * 꾸리는 일이 "좋은 단어 한 종류를 몇 개까지 욱여넣느냐" 로 납작해진다.
+   * 지금은 SUN 이 몇이든 그 자리에서 받는 것은 한 번뿐이라, 두 번째 해는
+   * 다른 자리에 세워야 값을 한다 — 종류를 늘리는 쪽이 언제나 낫다.
+   *
+   * @param tag 효과를 거는 단어 (SUN · MOON · COAL …)
+   * @return 이번 프레임에 처음이면 true
+   */
+  function once(o, tag) {
+    var k = '_only' + tag;
+    if (o[k] === frameNo) return false;
+    o[k] = frameNo;
+    return true;
+  }
 
   /** 두 글자 사이에 실제로 벌어진 틈 (닿아 있으면 0) */
   function gapOf(a, b) {
@@ -192,6 +261,21 @@ G.behaviors = (function () {
   }
   function isBurning(o) { return o.burning; }
 
+  /**
+   * 일감을 만난 것은 그 자리에 눌러앉는다.
+   *
+   * 단어들이 저 혼자 통통 뛰어다니는 것은 보드를 살아 있게 하는 재미지만,
+   * 짝을 만나 무언가 하고 있는 중에도 뛰면 그건 그냥 방해다. 나무 곁에 붙인
+   * 벌이 자꾸 튀어 달아나 꿀을 못 따고, 굽던 고기가 불에서 내려오고,
+   * 가게에 올려 둔 보석이 팔리기 직전에 미끄러져 내렸다.
+   * 그래서 짝을 찾은 쪽은 물론 짝이 되어 준 쪽까지 함께 멈춰 세운다.
+   */
+  function settle(e) {
+    if (!e) return;
+    e.calm = true;
+    e.jump = null;
+  }
+
   /** o 를 e 쪽으로 끌어당긴다 */
   function pull(e, o, force, dt, keep) {
     if (o.jump || o.dragging) return;
@@ -205,23 +289,24 @@ G.behaviors = (function () {
   /**
    * 무르익음 — 짝이 곁에 있는 동안 천천히 익는다.
    *
-   * 예전에는 여기서 글자를 바꿔치웠다 (MEAT → ROAST, SAND → GLASS). 그런데
-   * ROAST 도 GLASS 도 플레이어가 직접 철자해서 만들 수 있는 단어라, 같은 단어를
-   * 얻는 길이 둘이 되어 버렸다. 게다가 애써 만든 SAND 가 제멋대로 사라졌다.
+   * 예전에는 여기서 글자를 바꿔치웠다 (고기를 구우면 다른 단어가 되는 식).
+   * 그런데 그 결과물도 플레이어가 직접 철자해서 만들 수 있는 단어라, 같은 단어를
+   * 얻는 길이 둘이 되어 버렸다. 게다가 애써 만든 것이 제멋대로 사라졌다.
    * 그래서 이제 글자는 절대 바뀌지 않는다 — 빛깔이 변하고 벌이가 오를 뿐이다.
    *
    * 한번 익은 것은 짝을 치워도 되돌아가지 않는다. 익히는 데 든 시간을 빼앗지 않는다.
    *
    * @param secs 다 익는 데 걸리는 시간
+   * @param mul  다 익었을 때의 벌이 배수
    * @param tint 'green' 이면 푸르게, 그 밖에는 노릇하게
    * @return 익은 정도 0~1
    */
-  function ripen(e, dt, partner, secs, tint) {
+  function ripen(e, dt, partner, secs, mul, tint) {
     var p = e.data.ripe || 0;
     if (partner && p < 1) p = Math.min(1, p + dt * e.speedMul / secs);
     e.data.ripe = p;
     e.setRipe(p, tint);
-    if (p > 0) e.incomeMul *= 1 + (C.RIPE_MUL - 1) * p;
+    if (p > 0) e.incomeMul *= 1 + (mul - 1) * p;
     return p;
   }
 
@@ -242,10 +327,9 @@ G.behaviors = (function () {
    * 불에서 빼면 그을음이 천천히 가시니, 제때 빼내는 것이 요령이다.
    */
   function overcook(e, dt, fire) {
-    var over = Math.max(0, (e.data.over || 0) +
-      (fire ? dt * e.hazardMul : -dt * 0.6));
+    var over = Math.max(0, (e.data.over || 0) + (fire ? dt : -dt * 0.6));
     e.data.over = over;
-    var p = Math.min(1, over / C.ROAST_BURN);
+    var p = Math.min(1, over / C.OVERCOOK_BURN);
     if (fire && Math.random() < dt * (3 + p * p * 46)) {
       G.fx.spark(e.x + U.rand(-e.w * .35, e.w * .35), e.y - e.h * .3, {
         vx: U.rand(-7, 7), vy: U.rand(-34, -18) - p * 14, g: -10,
@@ -253,29 +337,103 @@ G.behaviors = (function () {
         c: p > .5 ? '86,80,76' : '150,142,136', a: .18 + p * .3, drag: .98
       });
     }
-    if (over >= C.ROAST_BURN) { e.data.over = 0; e.ignite(); }
+    if (over >= C.OVERCOOK_BURN) { e.data.over = 0; e.ignite(); }
   }
 
-  var GEMS = ['GOLD', 'IRON', 'RUBY', 'EMERALD', 'DIAMOND'];
+  var GEMS = ['GOLD', 'RUBY', 'DIAMOND', 'EMERALD'];
 
   /**
-   * 보석의 공통 성질. 만들어질 때 품질이 한 번 뽑히고 그 뒤로 바뀌지 않는다.
-   * 품질은 20초마다 버는 돈에도, 가게 매입가에도 똑같이 곱해진다.
-   * 좋은 것일수록 더 자주 반짝이니 눈으로도 구별된다.
+   * 보석의 공통 성질 — 반짝이는 것뿐이다.
+   * 값은 철자 수로 정해진다. 만들자마자 값이 제멋대로 갈리면 잘 나올 때까지
+   * 다시 만들게 되므로, 값이 달라지는 것은 플레이어가 HAMMER 로 두드렸을 때뿐이다.
+   * 두드린 보석은 값을 머리 위에 달고 다닌다.
    */
-  function gem(e, dt, bonus) {
-    if (e.data.q === undefined) {
-      e.data.q = U.rand(C.GEM_QUALITY[0], C.GEM_QUALITY[1]);
-    }
-    var q = e.data.q * (bonus || 1);
-    e.incomeMul *= q;
-    if (Math.random() < dt * (q - .8) * 2.4) {
+  function gem(e, dt) {
+    if (e.data.worth) e.setBadge('×' + U.mul(e.data.worth), e.data.worth >= 1 ? 'good' : 'warn');
+    /* 값을 치는 자리에 올려 두었으면 미끄러져 내리지 않는다 */
+    if (nearest(e, 96, isAnyWord(['SHOP', 'HAMMER']))) settle(e);
+    if (Math.random() < dt * 1.2) {
       G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y + U.rand(-e.h * .3, e.h * .3), {
         vx: U.rand(-6, 6), vy: U.rand(-14, -4), g: -3,
         r: U.rand(1, 1.9), life: U.rand(.5, 1),
         c: '235,225,190', a: .8, shape: 'star'
       });
     }
+  }
+
+  /** 물로 치는 것들 — SEED 가 싹트고 FISH 가 헤엄치는 자리 */
+  var WET = ['WATER', 'ICE'];
+
+  /* ==================================================================
+     끌어다 대고 있으면 되는 장치 — BOX 와 FORGE
+
+     단어를 만드는 길(끌어다 붙이기)과 일부러 다르게 두었다. 이쪽은 붙는 것이
+     아니라 "집어넣는" 것이라, 잠깐 대고 있어야 하고 결과를 되돌릴 수 없다.
+     실제로 손을 대는 곳은 drag.js 이고, 여기에는 규칙만 둔다.
+     ================================================================== */
+
+  /** 상자에 남은 자리 */
+  function boxRoom(box) {
+    return C.BOX_SLOTS - (box.data.kept || '').length;
+  }
+
+  /** 낱글자를 상자에 넣는다. 보드에서는 빠지므로 정원이 한 칸 빈다 */
+  function putInBox(box, letter) {
+    if (boxRoom(box) <= 0) return false;
+    box.data.kept = (box.data.kept || '') + letter.text;
+    var lx = letter.x, ly = letter.y;
+    G.board.remove(letter);
+    G.fx.line(lx, ly, box.x, box.y, { life: .4, c: '190,160,110', lw: 2 });
+    G.fx.burst(box.x, box.y - 6, '190,160,110', 10, 54);
+    G.fx.ring(box.x, box.y, { r0: 4, r1: 44, life: .4, c: '190,160,110', lw: 1.2 });
+    return true;
+  }
+
+  /** 지금 걸려 있는 강화 단계 */
+  function upLevel(e) { return (e.data && e.data.up) || 0; }
+
+  /**
+   * 강화를 걸 수 있는가.
+   * 능력 단어는 뺀다 — 능력이 곧 그 단어의 값이라 벌이 배수를 얹을 자리가 아니고,
+   * 애써 찾아낸 능력 단어가 도박 한 번에 사라지면 도감이 무너진다.
+   */
+  function upgradable(e) {
+    return !!e && e.type === 'word' && !G.WORD_BY_ID[e.text] &&
+      !e.afflicted() && upLevel(e) < C.UP_ODDS.length;
+  }
+
+  /**
+   * 강화 한 번. 성공하면 별이 하나 늘고 벌이 배수가 영구히 바뀐다.
+   * 실패하면 단어가 글자째 사라진다 — 흩어지지도 않는다.
+   * @return {boolean} 성공했는가
+   */
+  function runUpgrade(pad, target) {
+    var lv = upLevel(target);
+    var ok = Math.random() < C.UP_ODDS[lv];
+    var tx = target.x, ty = target.y, name = target.text;
+
+    G.fx.line(pad.x, pad.y, tx, ty, { life: .6, c: '175,140,215', lw: 2.5 });
+
+    if (!ok) {
+      G.board.remove(target);
+      G.fx.burst(tx, ty, '150,70,70', 26, 130);
+      G.fx.ring(tx, ty, { r0: 6, r1: 96, life: .7, c: '170,80,80', lw: 2 });
+      G.ui.toast('<b>' + name + '</b> 강화 실패 — 글자째 사라졌다');
+      return false;
+    }
+
+    target.data.up = lv + 1;
+    target.setStars(lv + 1);
+    G.fx.burst(tx, ty, '190,160,235', 22, 112);
+    G.fx.ring(tx, ty, { r0: 6, r1: 90, life: .7, c: '175,140,215', lw: 2 });
+    for (var i = 0; i < 12; i++) {
+      G.fx.spark(tx + U.rand(-20, 20), ty, {
+        vx: U.rand(-20, 20), vy: U.rand(-60, -24), g: 30,
+        r: U.rand(1.4, 2.6), life: 1, c: '215,190,250', a: .9, shape: 'star'
+      });
+    }
+    G.ui.toast('<b>' + name + '</b> ' + (lv + 1) + '강 성공 · 벌이 ×' + C.UP_MUL[lv]);
+    return true;
   }
 
   /* ==================================================================
@@ -285,27 +443,32 @@ G.behaviors = (function () {
 
     /* ---------- 하늘 ---------- */
 
-    /* 해: 풀을 키우고 물기를 말린다. 마른 것은 불이 잘 붙는다 */
+    /**
+     * 해 — 곁의 벌이 "주기" 를 당긴다.
+     * 액수는 건드리지 않는다. 그쪽은 MOON 몫이다.
+     */
     SUN: function (e, dt) {
-      var t = near(e, 168, isAnyWord(['TREE', 'SEED']));
-      for (var i = 0; i < t.length; i++) t[i].speedMul *= 1.6;
-
       var n = near(e, 150, function (o) { return o.type === 'word' && o !== e; });
-      for (var j = 0; j < n.length; j++) {
-        if (n[j].def.flammable) n[j].hazardMul *= 1.5;
-        if (n[j].def.tags && n[j].def.tags.indexOf('wet') >= 0) n[j].incomeMul *= 0.6;
+      for (var i = 0; i < n.length; i++) {
+        if (once(n[i], 'SUN')) n[i].payMul *= C.SUN_HASTE;
       }
-      if (nearest(e, 180, isWord('MOON'))) e.incomeMul *= 1.3;
+      if (Math.random() < dt * 1.2) {
+        G.fx.spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-8, 8), {
+          vx: U.rand(-10, 10), vy: U.rand(-16, -6), r: 1.3, life: .8,
+          c: '230,190,110', a: .5
+        });
+      }
     },
 
-    /* 달: 주변을 밤처럼 잠재워 조용히 더 벌게 한다 */
+    /**
+     * 달 — 곁의 벌이 "액수" 를 올린다.
+     * 주기는 건드리지 않는다. 그쪽은 SUN 몫이다.
+     */
     MOON: function (e, dt) {
-      var n = near(e, 160, function (o) { return o !== e; });
+      var n = near(e, 150, function (o) { return o.type === 'word' && o !== e; });
       for (var i = 0; i < n.length; i++) {
-        n[i].calm = true;
-        n[i].incomeMul *= 1.3;
+        if (once(n[i], 'MOON')) n[i].incomeMul *= C.MOON_INCOME;
       }
-      if (nearest(e, 180, isWord('SUN'))) e.incomeMul *= 1.3;
       if (Math.random() < dt * .5) {
         G.fx.spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-10, 10), {
           vx: 0, vy: -7, r: 1.4, life: 1.1, c: '160,165,205', a: .45
@@ -313,23 +476,12 @@ G.behaviors = (function () {
       }
     },
 
-    /* 별: 가까운 행운을 더 자주 일으킨다 */
-    STAR: function (e, dt) {
-      var l = near(e, 190, isWord('LUCK'));
-      for (var i = 0; i < l.length; i++) l[i].speedMul *= 2.2;
-    },
-
-    /* 바람: 불길을 키운다 */
-    WIND: function (e, dt) {
-      var f = near(e, 150, function (o) { return o.burning || (o.type === 'word' && o.text === 'FIRE'); });
-      for (var i = 0; i < f.length; i++) f[i].hazardMul *= 1.8;
-    },
-
     /* ---------- 물 ---------- */
 
-    /* 물: 주변의 불을 끄고, 불 곁에서는 끓어올라 주변을 재촉한다 */
+    /* 물 — 곁에서 타는 것을 꺼 준다. 이 게임에서 불을 끄는 것은 이 단어뿐이다 */
     WATER: function (e, dt) {
       var b = near(e, 132, isBurning);
+      if (b.length) settle(e);               // 불을 끄는 중에는 물이 튀어 달아나지 않는다
       for (var i = 0; i < b.length; i++) {
         var t = acc(b[i], 'wet', dt);
         G.fx.spark(b[i].x + U.rand(-10, 10), b[i].y - 6, {
@@ -337,108 +489,25 @@ G.behaviors = (function () {
         });
         if (t > 4.5) b[i].extinguish();
       }
-      var t2 = near(e, 126, isAnyWord(['TREE', 'SEED']));
-      for (var j = 0; j < t2.length; j++) t2[j].speedMul *= 1.5;
-
-      /* 끓는 물 — 말라 없어지지 않는다. 불을 치우면 그냥 잦아든다 */
-      e.data.boil = !!nearest(e, 120, isWord('FIRE'));
-      if (!e.data.boil) return;
-      var n = near(e, 140, function (o) { return o.type === 'word' && o !== e; });
-      for (var k = 0; k < n.length; k++) n[k].speedMul *= 1.4;
-      if (Math.random() < dt * 3) {
-        G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y - e.h * .3, {
-          vx: U.rand(-6, 6), vy: U.rand(-26, -14), g: -6,
-          r: U.rand(1.6, 3), life: .8, c: '210,220,225', a: .3, drag: .97
-        });
-      }
     },
 
-    /* 강: 흘러가며 낱글자를 하류로 실어 나른다. ROCK 이 있으면 그 뒤가 여울이 된다 */
-    RIVER: function (e, dt) {
-      if (e.data.flow === undefined) e.data.flow = U.chance(.5) ? 1 : -1;
-      var rocks = near(e, 160, isWord('ROCK'));
-      var n = near(e, 150, isLoose);
-      for (var i = 0; i < n.length; i++) {
-        if (n[i].jump) continue;
-        /* 여울에 걸린 글자는 떠내려보내지 않는다 (붙드는 일은 ROCK 이 한다) */
-        var caught = false;
-        for (var r = 0; r < rocks.length; r++) {
-          if (gapOf(n[i], rocks[r]) < 40) { caught = true; break; }
-        }
-        if (caught) continue;
-        n[i].vx += e.data.flow * 150 * dt;
-        n[i].vy += (e.y - n[i].y) * 0.6 * dt;
-      }
-      var b = near(e, 172, isBurning);
-      for (var j = 0; j < b.length; j++) {
-        if (acc(b[j], 'wet', dt) > 3) b[j].extinguish();
-      }
-      var t = near(e, 152, isAnyWord(['TREE', 'SEED']));
-      for (var k = 0; k < t.length; k++) t[k].speedMul *= 1.5;
-      if (Math.random() < dt * 3) {
-        G.fx.spark(e.x - e.data.flow * e.w * .5, e.y + U.rand(-10, 10), {
-          vx: e.data.flow * 40, vy: 0, r: 1.2, life: .8, c: '90,160,200', a: .5, drag: .99
-        });
-      }
-    },
-
-    /**
-     * 얼음: 주변을 얼려 붙들어 둔다.
-     * 불 곁에서는 녹아내려 얼리는 힘을 잃지만, 녹는 동안 흘린 물이 불을 끈다.
-     * 사라지지는 않는다 — 열에서 떼어 놓으면 도로 얼어붙는다.
-     */
+    /* 얼음 — 주변을 얼려 그 자리에 세워 둔다 */
     ICE: function (e, dt) {
-      var hot = nearest(e, 118, isWord('FIRE'));
-      var m = (e.data.melt || 0) + (hot ? dt / 15 : -dt / 20);
-      e.data.melt = m = Math.max(0, Math.min(1, m));
-
-      var solid = 1 - m;
-      if (solid > 0.05) {
-        var n = near(e, 60 + 58 * solid, function (o) { return o !== e; });
-        for (var i = 0; i < n.length; i++) {
-          n[i].chill = 0.7 * solid;
-          n[i].hazardMul *= 1 - 0.5 * solid;
-          if (n[i].burning && acc(n[i], 'iced', dt) > 8) n[i].extinguish();
-        }
+      var n = near(e, 150, function (o) { return o !== e; });
+      for (var i = 0; i < n.length; i++) n[i].chill = 0.7;
+      if (n.length && Math.random() < dt * 2) {
+        G.fx.spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-10, 10), {
+          vx: U.rand(-8, 8), vy: U.rand(-8, 4), r: 1.2, life: .7,
+          c: '170,215,235', a: .5
+        });
       }
-      /* 녹아 흐르는 물이 불을 끈다 — 많이 녹았을수록 빠르게 */
-      if (m > 0.1) {
-        var b = near(e, 124, isBurning);
-        for (var j = 0; j < b.length; j++) {
-          if (acc(b[j], 'wet', dt * m * 1.6) > 4.5) b[j].extinguish();
-        }
-        if (Math.random() < dt * m * 4) {
-          G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y + e.h * .3, {
-            vx: 0, vy: 26, g: 40, r: 1.3, life: .6, c: '150,200,225', a: .5
-          });
-        }
-      }
-    },
-
-    /**
-     * 김: 주변을 몰아치게 재촉한다.
-     * 가만히 두면 식어서 힘을 잃는다. 없어지지는 않고, 다시 데우면 되살아난다.
-     */
-    STEAM: function (e, dt) {
-      var hot = nearest(e, 136, function (o) {
-        return o.type === 'word' && (o.text === 'FIRE' || (o.text === 'WATER' && o.data.boil));
-      });
-      var h = (e.data.hot === undefined ? 1 : e.data.hot) + (hot ? dt / 12 : -dt / 60);
-      e.data.hot = h = Math.max(0, Math.min(1, h));
-      if (h < 0.05) return;
-      var n = near(e, 156, function (o) { return o.type === 'word' && o !== e; });
-      for (var i = 0; i < n.length; i++) n[i].speedMul *= 1 + 0.9 * h;
     },
 
     /* ---------- 불과 땅 ---------- */
 
-    /* 불: 곁에 있는 것들을 데운다. COAL 을 물리면 불길이 거세진다 */
+    /* 불 — 잘 타는 것에 옮아붙는다 (불이 옮는 일 자체는 ignite 결속이 맡는다) */
     FIRE: function (e, dt) {
-      var hot = 1;
-      if (nearest(e, 120, isWord('COAL'))) { hot = 2; e.stoke = 2; }
-      var n = near(e, 136, function (o) { return o.type === 'word' && o !== e && !o.burning; });
-      for (var i = 0; i < n.length; i++) n[i].incomeMul *= 1 + 0.2 * hot;
-      if (Math.random() < dt * 2 * hot) {
+      if (Math.random() < dt * 2 * (e.stoke || 1)) {
         G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y - 8, {
           vx: U.rand(-6, 6), vy: U.rand(-34, -18), r: U.rand(1.2, 2.2),
           life: .8, c: '235,140,60', a: .7
@@ -447,148 +516,143 @@ G.behaviors = (function () {
     },
 
     /**
-     * 바위: 물살 한가운데 놓으면 뒤쪽에 여울이 생긴다.
-     * 떠내려가던 낱글자가 거기 걸려 뛰지도 흘러가지도 않고 차곡차곡 모인다 —
-     * 강가에 쳐 두는 그물인 셈이다.
+     * 숯 — 곁의 불을 거세게 지핀다.
+     * 그 한 쌍은 둘 다 크게 벌고 굽는 것도 빨라지지만, 숯은 제 몸을 태우는 것이라
+     * 15분이면 재만 남는다. 보드에서 가장 잘 버는 자리를 유지하려면 계속 다시
+     * 만들어 넣어야 한다 — 가만히 두면 저절로 굴러가는 벌이가 아니다.
+     *
+     * 숯이 여럿이어도 불 하나가 세 배를 넘게 벌지는 않는다 (once).
      */
-    ROCK: function (e, dt) {
-      if (!nearest(e, 156, isWord('RIVER'))) return;
-      var n = near(e, 138, isLoose);
-      for (var i = 0; i < n.length; i++) {
-        n[i].calm = true;
-        n[i].jump = null;
-        n[i].vx *= 0.88; n[i].vy *= 0.88;
-        pull(e, n[i], 70, dt, 44);
-      }
-      if (n.length && Math.random() < dt * 2) {
-        G.fx.spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-8, 8), {
-          vx: U.rand(-10, 10), vy: -6, r: 1.2, life: .6, c: '140,180,205', a: .4
-        });
-      }
-    },
+    COAL: function (e, dt) {
+      var f = near(e, 120, isWord('FIRE'));
+      if (!f.length) return;
 
-    /**
-     * 모래: 타는 것을 덮어 끈다.
-     * 물보다 느리지만 젖지 않으니 몇 번이고 다시 쓸 수 있고,
-     * 불 자체를 끄지는 못해도 번지는 기세는 눌러 준다.
-     */
-    SAND: function (e, dt) {
-      var b = near(e, 120, isBurning);
-      for (var i = 0; i < b.length; i++) {
-        if (acc(b[i], 'buried', dt) > 7) b[i].extinguish();
-        if (Math.random() < dt * 2) {
-          G.fx.spark(b[i].x + U.rand(-12, 12), b[i].y + U.rand(-6, 6), {
-            vx: U.rand(-8, 8), vy: 10, g: 30, r: 1.2, life: .5, c: '200,182,132', a: .55
-          });
-        }
+      settle(e);                             // 불을 문 숯도, 그 불도 자리를 지킨다
+      for (var i = 0; i < f.length; i++) {
+        f[i].data.stokeT = .4;
+        f[i].stoke = C.COAL_STOKE;
+        settle(f[i]);
+        if (once(f[i], 'COAL')) f[i].incomeMul *= C.COAL_PAIR;
       }
-      var f = near(e, 128, isWord('FIRE'));
-      for (var j = 0; j < f.length; j++) f[j].hazardMul *= 0.55;
-    },
+      if (once(e, 'COAL')) e.incomeMul *= C.COAL_PAIR;
 
-    /* 유리: 빛을 모아 렌즈가 된다 */
-    GLASS: function (e, dt) {
-      var src = nearest(e, 140, isAnyWord(['SUN', 'LAMP']));
-      if (!src) return;
-      var n = near(e, 140, function (o) { return o.type === 'word' && o !== e; });
-      for (var i = 0; i < n.length; i++) n[i].incomeMul *= 1.35;
+      /* 다 타 가는 숯. 남은 시간을 분으로 세어 머리 위에 달아 두었더니, 좋은 자리
+         하나가 시한폭탄처럼 읽혔다 — 15분 내내 숫자가 줄어드는 것을 보고 있으면
+         저 자리는 곧 없어질 자리로만 보인다. 지금은 고기가 익는 것과 같은 방식으로,
+         숯이 하얗게 바래 가는 것으로만 알린다 */
+      e.data.spent = (e.data.spent || 0) + dt;
+      var left = C.COAL_LIFE - e.data.spent;
+      e.setRipe(e.data.spent / C.COAL_LIFE, 'ash');
+      if (left <= 0) {
+        G.ui.toast('<b>COAL</b> 이 다 타서 재가 되었다');
+        G.fx.burst(e.x, e.y, '90,84,80', 24, 120);
+        G.board.remove(e);
+        return;
+      }
+
       if (Math.random() < dt * 2) {
-        G.fx.line(src.x, src.y, e.x, e.y, { life: .3, c: '225,215,150', lw: 1 });
+        G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y - 6, {
+          vx: U.rand(-8, 8), vy: U.rand(-24, -10), r: U.rand(1.4, 2.4),
+          life: .7, c: '235,120,50', a: .55
+        });
       }
     },
 
     /* ---------- 풀 ---------- */
 
-    TREE: function (e, dt) {
-      if (e.data.bugged > 0) e.data.bugged -= dt;
-      if (e.data.wet > 0) { e.data.wet -= dt; e.speedMul *= 1.8; }
-    },
-
-    /* 씨앗: 볕이나 물이 있어야 싹이 튼다. 튼 싹은 그대로 남는다 */
+    /* 씨앗 — 물이 있어야 싹이 튼다. 튼 싹은 그대로 남는다 */
     SEED: function (e, dt) {
       if (e.burning) return;
-      if (e.data.wet > 0) { e.data.wet -= dt; e.speedMul *= 1.8; }
-      var sun = nearest(e, 150, isAnyWord(['SUN', 'WATER', 'RAIN', 'RIVER', 'LAMP']));
-      var p = ripen(e, dt, sun, 90, 'green');
-      if (sun && p < 1 && Math.random() < dt * .5) {
+      var wet = nearest(e, 150, isAnyWord(WET));
+      if (wet) settle(wet);                  // 물을 대는 동안에는 물도 자리를 지킨다
+      var p = ripen(e, dt, wet, C.GROW_TIME, C.RIPE_SEED, 'green');
+      if (wet && p < 1 && Math.random() < dt * .5) {
         G.fx.spark(e.x + U.rand(-8, 8), e.y - 4, {
           vx: 0, vy: -10, r: 1.3, life: .7, c: '120,175,110', a: .5
         });
       }
     },
 
+    /**
+     * 벌 — 나무를 찾으면 그 곁에 눌러앉는다.
+     * 꿀을 터는 것은 ACTIONS.bee 가 20초마다 굴리는 주사위인데, 그때 나무가
+     * 곁에 없으면 허탕이다. 벌은 제 몸이 가벼워 자주 튀는 편이라
+     * 애써 나무에 붙여 놓아도 다음 주사위 때에는 저만치 가 있기 일쑤였다.
+     * 나무를 찾은 벌은 이제 그 자리에 머문다 — 붙어 있어야 꿀을 딴다.
+     */
     BEE: function (e, dt) {
-      var t = near(e, 132, isAnyWord(['TREE', 'SEED']));
-      if (!t.length) return;
-      e.calm = true;
-      e.incomeMul *= 1.7;
-      for (var i = 0; i < t.length; i++) t[i].speedMul *= 1.4;
-      if (Math.random() < dt * .8) {
-        G.fx.spark(e.x + U.rand(-10, 10), e.y - 6, {
-          vx: U.rand(-8, 8), vy: -10, r: 1.3, life: .6, c: '225,190,70', a: .7
+      var t = nearest(e, 132, isWord('TREE'));
+      if (!t) return;
+      /* 끌어당기지는 않는다. 둘 다 가벼워서, 당기는 힘과 밀어내는 힘이
+         맞물리면 붙어 있는 채로 보드 저편까지 슬금슬금 걸어가 버린다 */
+      settle(e); settle(t);
+      if (Math.random() < dt * 1.1) {
+        G.fx.spark(e.x + U.rand(-9, 9), e.y - 6, {
+          vx: U.rand(-6, 6), vy: -8, r: 1.1, life: .6, c: '215,190,90', a: .5
         });
       }
     },
 
     /* ---------- 살림 ---------- */
 
-    /* 집: 주변 낱글자를 재워 주고 그만큼 세를 받는다 */
-    HOUSE: function (e, dt) {
-      if (e.burning) return;
-      var n = near(e, 150, isLoose);
-      var k = Math.min(n.length, 6);
-      for (var i = 0; i < k; i++) n[i].calm = true;
-      if (k) e.incomeMul *= 1 + k * 0.16;
-    },
-
-    ROAD: function (e, dt) {
-      var c = near(e, 170, isWord('CAR'));
-      for (var i = 0; i < c.length; i++) c[i].incomeMul *= 1.4;
-    },
-
-    /* 상자: 낱글자를 붙잡아 정리하고 값을 쌓는다 */
-    BOX: function (e, dt) {
-      var n = near(e, 128, isLoose);
-      n.sort(function (a, b) {
-        return U.dist2(e.x, e.y, a.x, a.y) - U.dist2(e.x, e.y, b.x, b.y);
-      });
-      var max = Math.min(n.length, 6);
-      for (var i = 0; i < max; i++) {
-        var o = n[i];
-        o.heldBy = e.id;
-        o.jump = null;
-        var col = i % 3, row = Math.floor(i / 3);
-        var p = G.board.clampPoint(e.x + (col - 1) * 42, e.y + 40 + row * 46, o);
-        var k = Math.min(1, dt * 3.4);
-        o.x = U.lerp(o.x, p.x, k);
-        o.y = U.lerp(o.y, p.y, k);
-      }
-      if (max > 0) e.data.stored = (e.data.stored || 0) + max * 0.5 * dt;
-      e.setBadge(e.data.stored > 1 ? '잠김 ' + Math.round(e.data.stored) + 'w' : '');
-    },
-
-    /* 자석: 낱글자를 끌어당긴다 */
-    MAGNET: function (e, dt) {
-      var n = near(e, 178, isLoose);
-      for (var i = 0; i < n.length; i++) pull(e, n[i], 130, dt);
-    },
-
-    /* 등불: 밝히고, 붙들고, 책을 비추고, 유령을 민다 */
-    LAMP: function (e, dt) {
-      var n = near(e, 150, function (o) { return o.type === 'word' && o !== e; });
-      for (var i = 0; i < n.length; i++) n[i].incomeMul *= 1.25;
-      var l = near(e, 128, isLoose);
-      for (var j = 0; j < l.length; j++) l[j].calm = true;
-      var b = near(e, 140, isWord('BOOK'));
-      for (var k = 0; k < b.length; k++) b[k].speedMul *= 1.8;
-      var g = near(e, 122, isWord('GHOST'));
-      for (var m = 0; m < g.length; m++) g[m].push(e.x, e.y, 90 * dt);
+    /**
+     * 열쇠 — 상자를 보면 다가가 멈춘다.
+     * 자물쇠를 따는 데 2.5초가 걸리는데 그 사이 열쇠가 튀어 달아나면
+     * 셈이 처음부터 다시라, 붙였는데도 열리지 않는 것처럼 보였다.
+     * (실제로 여는 일은 unlock 결속이 맡는다)
+     */
+    KEY: function (e, dt) {
+      var b = nearest(e, 92, isWord('BOX'));
+      if (!b) return;
+      settle(e);
+      pull(b, e, 70, dt, 34);
     },
 
     /**
-     * 톱니바퀴: 다른 톱니와 맞물리면 함께 돈다.
-     * 맞물린 하나마다 제 벌이가 곱절로 뛰니 여럿을 짜 놓을수록 급하게 커지지만,
-     * 물릴 수 있는 자리가 넷뿐이고 톱니 하나하나가 보드 한 칸을 잡아먹는다.
+     * 상자 — 플레이어가 직접 넣은 글자만 들어 있다.
+     * 저절로 빨아들이던 때에는 쓸 만한 글자까지 상자가 먼저 채 가서,
+     * 상자를 세워 두면 오히려 단어를 못 만들었다.
+     * 넣은 글자는 보드에서 빠지므로 정원이 한 칸씩 도로 생긴다.
+     * 쌓인 값은 상자 안에 잠겨 있다 — 꺼내는 것은 KEY 몫이다.
+     */
+    BOX: function (e, dt) {
+      var n = (e.data.kept || '').length;
+      if (n > 0) {
+        var per = C.BOX_PER_LETTER / C.PAY_PERIOD;      // 낱글자 하나가 1초에 쌓는 값
+        e.data.stored = (e.data.stored || 0) + n * per * dt * (e.boxMul || 1);
+      }
+      e.setBadge(n ? n + '장 · ' + Math.round(e.data.stored || 0) + 'w' : '');
+    },
+
+    /**
+     * 자석 — 손에 쥐고 있을 때만 힘을 낸다.
+     * 내려놓고도 계속 빨아들이면 보드가 저절로 정리되어 손댈 일이 없어진다.
+     * 끌고 다니며 쓸어 담는 도구라야 자석을 만든 보람이 있다.
+     * 딸려 오는 것은 모음뿐이다 — 정작 모자란 것은 늘 모음이다.
+     */
+    MAGNET: function (e, dt) {
+      if (!e.dragging) return;
+      var n = near(e, 178, function (o) {
+        return o.type === 'letter' && G.VOWELS.indexOf(o.text) >= 0;
+      });
+      for (var i = 0; i < n.length; i++) {
+        n[i].heldBy = null;
+        n[i].jump = null;
+        pull(e, n[i], 220, dt, 34);
+      }
+      if (Math.random() < dt * 8) {
+        var a = Math.random() * 6.2832;
+        G.fx.spark(e.x + Math.cos(a) * 90, e.y + Math.sin(a) * 70, {
+          vx: -Math.cos(a) * 70, vy: -Math.sin(a) * 55, r: 1.3, life: .5,
+          c: '200,110,130', a: .55, drag: .96
+        });
+      }
+    },
+
+    /**
+     * 톱니바퀴: 혼자 두어도 네 글자 단어만큼은 번다.
+     * 다른 톱니와 맞물리면 하나마다 제 벌이가 곱절로 뛰니 여럿을 짜 놓을수록
+     * 급하게 커지지만, 물릴 수 있는 자리가 셋뿐이고 하나하나가 보드 한 칸이다.
      */
     GEAR: function (e, dt) {
       var list = G.board.all(), n = 0;
@@ -607,159 +671,119 @@ G.behaviors = (function () {
       }
     },
 
-    /* 시계: 행동을 재촉한다 — 불이 번지는 속도까지 */
-    CLOCK: function (e, dt) {
-      var n = near(e, 152, function (o) { return o.type === 'word' && o !== e; });
-      for (var i = 0; i < n.length; i++) {
-        n[i].speedMul *= 1.9;
-        n[i].hazardMul *= 1.4;
-      }
+    /**
+     * 망치 — 보석을 한 번 내리쳐 값을 다시 매긴다.
+     * 깎일 수도 곱절이 될 수도 있고, 한 보석에 한 번뿐이다. 두들겨 보고 마음에
+     * 안 든다고 또 두들길 수 있으면 결국 다들 최고값에서 멈추게 되어,
+     * 고민할 것이 없어진다. 한 번뿐이라야 "그냥 팔까" 를 묻게 된다.
+     */
+    HAMMER: function (e, dt) {
+      if (e.burning) return;
+      var g = nearest(e, 96, function (o) {
+        return o.type === 'word' && GEMS.indexOf(o.text) >= 0 && !o.data.worth && !o.afflicted();
+      });
+      if (!g) { e.data.hold = 0; return; }
+
+      e.data.hold = (e.data.hold || 0) + dt;
+      var p = e.data.hold / C.HAMMER_HOLD;
+      G.fx.linkDots(e.x, e.y, g.x, g.y, Math.min(1, p), dt);
+      if (p < 1) return;
+
+      e.data.hold = 0;
+      /* 눈금을 두고 뽑는다 — ×1.29 보다 ×1.25 가 읽기 쉽고 견주기도 쉽다 */
+      var steps = Math.round((C.HAMMER_MAX - C.HAMMER_MIN) / C.HAMMER_STEP);
+      var w = C.HAMMER_MIN + C.HAMMER_STEP * Math.floor(Math.random() * (steps + 1));
+      g.data.worth = w;
+      g.setBadge('×' + U.mul(w), w >= 1 ? 'good' : 'warn');
+      G.fx.burst(g.x, g.y, w >= 1 ? '230,215,150' : '150,140,130', 22, 108);
+      G.fx.ring(g.x, g.y, { r0: 4, r1: 84, life: .6, c: '170,150,120', lw: 2 });
+      G.ui.toast('<b>' + g.text + '</b> 를 내리쳤다 · 값 ×' + U.mul(w));
     },
 
-    /* 시간: 위험은 늦추고, 익어야 하는 것은 빨리 여물게 한다 */
-    TIME: function (e, dt) {
-      var n = near(e, 146, function (o) { return o !== e; });
-      for (var i = 0; i < n.length; i++) {
-        n[i].hazardMul *= 0.25;
-        n[i].speedMul *= 0.8;
+    /**
+     * 강화대 — 스스로는 아무 일도 하지 않는다.
+     * 보통 단어를 끌어다 대고 있어야 굴러가는 물건이라, 하는 일은 전부
+     * drag.js 쪽에 있다 (device / runUpgrade). 여기서는 켜져 있다는 표시만 한다.
+     */
+    FORGE: function (e, dt) {
+      if (Math.random() < dt * 1.6) {
+        G.fx.spark(e.x + U.rand(-e.w * .45, e.w * .45), e.y + U.rand(-e.h * .3, e.h * .3), {
+          vx: 0, vy: U.rand(-18, -8), r: U.rand(1, 1.8), life: .8,
+          c: '175,140,215', a: .55, shape: 'star'
+        });
       }
-      var ripe = near(e, 146, isAnyWord(['SEED', 'EGG']));
-      for (var j = 0; j < ripe.length; j++) ripe[j].speedMul *= 2.2;
-    },
-
-    NEST: function (e, dt) {
-      if (nearest(e, 112, isWord('BIRD'))) e.incomeMul *= 1.4;
     },
 
     /* ---------- 짐승 ---------- */
 
+    /**
+     * 고양이 — 상자를 보면 기어이 들어앉는다.
+     * 눌러앉은 상자는 값을 훨씬 빨리 쌓는다. 쌓인 값을 꺼내려면 여전히 KEY 가
+     * 있어야 하니, 상자 한 벌(BOX·CAT·KEY)은 자리를 세 칸 내주고 굴리는 살림이다.
+     */
     CAT: function (e, dt) {
-      if (e.data.purrT > 0) {
-        e.data.purrT -= dt;
-        e.calm = true;
-        e.incomeMul *= 1.7;
-        if (Math.random() < dt * .6) {
-          G.fx.spark(e.x + U.rand(-12, 12), e.y - 14, {
-            vx: 0, vy: -10, r: 1.4, life: .8, c: '190,170,140', a: .5
-          });
-        }
-      }
-    },
-
-    DOG: function (e, dt) {
-      if (e.data.digT > 0) {
-        e.data.digT -= dt;
-        e.calm = true;
-        e.data.digAcc = (e.data.digAcc || 0) + dt;
-        if (e.data.digAcc > 6) {
-          e.data.digAcc = 0;
-          if (U.chance(.4) && G.board.count() < G.maxEntities()) {
-            G.board.spawnLetter(null, e.x + U.rand(-40, 40), e.y + U.rand(20, 50));
-          } else {
-            var v = reward(0.18, 7);
-            G.board.earn(v); G.ui.floatMoney(e.x, e.y - 18, v);
-          }
-          G.fx.burst(e.x, e.y + 14, '150,120,80', 10, 60);
-        }
-      }
-      if (e.data.carry) {
-        var L = G.board.get(e.data.carry);
-        if (!L || L.dragging) { e.data.carry = null; return; }
-        L.heldBy = e.id;
-        L.jump = null;
-        var p = G.board.clampPoint(e.x + e.w * .55 + 8, e.y + 6, L);
-        var k = Math.min(1, dt * 6);
-        L.x = U.lerp(L.x, p.x, k); L.y = U.lerp(L.y, p.y, k);
-        e.data.carryT = (e.data.carryT || 0) - dt;
-        if (e.data.carryT <= 0) {
-          e.data.carry = null;
-          L.vx = U.rand(-40, 40); L.vy = U.rand(-30, 30);
-          G.fx.spark(L.x, L.y, { vx: 0, vy: -20, r: 2, life: .5, c: '160,140,110', a: .6 });
-        }
-      }
-    },
-
-    BIRD: function (e, dt) {
-      var t = nearest(e, 112, isAnyWord(['NEST', 'TREE']));
-      if (t) {
-        e.calm = true;
-        e.incomeMul *= (t.text === 'NEST') ? 1.9 : 1.6;
-      }
-    },
-
-    /* 알: 품어 주면 따뜻해진다. 다 품어진 알은 가끔 새 글자를 내놓는다 */
-    EGG: function (e, dt) {
-      if (e.burning) return;
-      var warm = nearest(e, 120, isAnyWord(['NEST', 'BIRD']));
-      var p = ripen(e, dt, warm, 80);
-      if (warm && p < 1 && Math.random() < dt * (p + .2) * 2) {
-        G.fx.spark(e.x + U.rand(-10, 10), e.y, {
-          vx: U.rand(-14, 14), vy: -14, r: 1.4, life: .5, c: '200,185,150', a: .8
+      var b = nearest(e, 112, isWord('BOX'));
+      if (!b) return;
+      /* 고양이 둘이 한 상자에 앉아도 상자가 두 배로 빨라지지는 않는다 */
+      b.data.catT = .4;
+      b.boxMul = C.CAT_BOX;
+      settle(e);                           // 자리를 잡았으면 더 뛰지 않는다
+      pull(b, e, 90, dt, 30);
+      if (Math.random() < dt * 1.4) {
+        G.fx.spark(e.x + U.rand(-10, 10), e.y - 8, {
+          vx: 0, vy: -9, r: 1.3, life: .9, c: '190,175,150', a: .4
         });
       }
-      if (p < 1) return;
-      e.data.lay = (e.data.lay || 0) + dt;
-      if (e.data.lay > 34 && G.board.count() < G.maxEntities()) {
-        e.data.lay = 0;
-        G.board.spawnLetter(null, e.x + U.rand(-34, 34), e.y + U.rand(24, 48));
-        G.fx.burst(e.x, e.y, '210,195,160', 10, 56);
-      }
     },
 
-    FISH: function (e, dt) {
-      var w = nearest(e, 138, isAnyWord(['RIVER', 'WATER', 'RAIN', 'ICE']));
-      if (w) {
-        e.calm = true;
-        e.incomeMul *= (w.text === 'RIVER') ? 1.9 : 1.6;
-        if (Math.random() < dt * 1.2) {
-          G.fx.spark(e.x + U.rand(-14, 14), e.y - 8, {
-            vx: 0, vy: -12, r: 1.3, life: .6, c: '80,170,180', a: .5
-          });
-        }
-      }
-    },
-
-    /* 벌레: 나무를 갉는다 */
-    BUG: function (e, dt) {
-      var t = near(e, 104, isWord('TREE'));
-      for (var i = 0; i < t.length; i++) {
-        t[i].data.bugged = 0.5;
-        t[i].incomeMul *= 0.5;
-      }
-    },
-
-    /* 생쥐: 치즈 곁에서는 얌전해진다 */
+    /**
+     * 생쥐 — 바닥에 떨어진 것을 그냥 지나치지 못한다.
+     * STAR 가 떨군 힌트권도, SHOP 이 흘린 잔돈도 가리지 않는다.
+     * 떨어진 것들은 몇 초 안에 눌러야 하는데, 그걸 대신 주워 온다.
+     * 훔쳐 가기만 하던 때에는 만들 이유가 없어서 보이는 족족 부수는 단어였다.
+     */
     MOUSE: function (e, dt) {
-      if (nearest(e, 108, isWord('CHEESE'))) {
-        e.calm = true;
-        e.incomeMul *= 1.7;
+      var t = G.tokens.nearest(e.x, e.y);
+      if (!t) return;
+      settle(e);
+      var d = Math.max(1, U.dist(e.x, e.y, t.x, t.y));
+      if (d < 30) {
+        G.tokens.take(t);
+        G.fx.spark(e.x, e.y - 10, { vx: 0, vy: -20, r: 2, life: .6, c: '190,180,160', a: .7 });
+        return;
       }
+      e.vx += ((t.x - e.x) / d) * 320 * dt;
+      e.vy += ((t.y - e.y) / d) * 320 * dt;
     },
 
-    CHEESE: function (e, dt) {
-      var m = near(e, 210, isWord('MOUSE'));
-      for (var i = 0; i < m.length; i++) pull(e, m[i], 110, dt, 54);
-    },
-
-    /* 우유: TIME 곁에 오래 두면 꾸덕하게 삭아 벌이가 오른다 */
-    MILK: function (e, dt) {
-      ripen(e, dt, nearest(e, 96, isWord('TIME')), 38);
+    /* 물고기 — 물이 없으면 파닥거리기만 하고 한 푼도 벌지 못한다 */
+    FISH: function (e, dt) {
+      var w = nearest(e, 138, isAnyWord(WET));
+      if (!w) { e.incomeMul = 0; return; }
+      settle(e); settle(w);
+      e.incomeMul *= C.FISH_INCOME;
+      if (Math.random() < dt * 1.2) {
+        G.fx.spark(e.x + U.rand(-14, 14), e.y - 8, {
+          vx: 0, vy: -12, r: 1.3, life: .6, c: '80,170,180', a: .5
+        });
+      }
     },
 
     /* ---------- 먹을 것 ---------- */
 
     /**
-     * 고기: 짐승을 부르고, 불 곁에 두면 노릇하게 익는다.
+     * 고기: 불 곁에 두면 노릇하게 익는다.
      * 고기는 끝까지 MEAT 다 — 빛깔이 변하고 벌이가 오를 뿐이다.
      * 다 익은 뒤에도 불 위에 두면 타 버린다. 익거나 타거나, 그 둘뿐이다.
      */
     MEAT: function (e, dt) {
-      var a = near(e, 190, isAnyWord(['CAT', 'DOG']));
-      for (var i = 0; i < a.length; i++) pull(e, a[i], 90, dt, 60);
       if (e.burning) return;
 
       var f = nearest(e, 100, isWord('FIRE'));
-      var p = ripen(e, dt, f, 24);
+      /* 굽는 동안에는 고기도 불도 자리를 뜨지 않는다 — 아니면 익다 말다 한다 */
+      if (f) { settle(e); settle(f); }
+      /* 숯을 물린 불은 더 빨리 굽는다 — 그만큼 태우기도 쉽다 */
+      var p = ripen(e, dt * (f ? f.stoke || 1 : 1), f, C.COOK_TIME, C.RIPE_MEAT);
       if (p > 0 && Math.random() < dt * (2 + p * 8)) {
         G.fx.spark(e.x + U.rand(-e.w * .3, e.w * .3), e.y - e.h * .25, {
           vx: U.rand(-5, 5), vy: U.rand(-24, -12), g: -8,
@@ -769,52 +793,15 @@ G.behaviors = (function () {
       if (p >= 1) overcook(e, dt, f);
     },
 
-    /**
-     * 구이: 처음부터 익어 있는 고기라 그냥 두어도 잘 번다.
-     * 불 옆에 계속 두면 점점 검어지다 타 버린다.
-     */
-    ROAST: function (e, dt) {
-      if (e.burning) return;
-      e.incomeMul *= C.ROAST_MUL;
-      overcook(e, dt, nearest(e, 124, isWord('FIRE')));
-      var a = near(e, 190, isAnyWord(['CAT', 'DOG']));
-      for (var i = 0; i < a.length; i++) pull(e, a[i], 90, dt, 60);
-    },
-
-    /* ---------- 돈 ---------- */
-
     /* ---------- 보석 ---------- */
 
-    GOLD: function (e, dt) {
-      gem(e, dt, nearest(e, 186, isWord('BANK')) ? 1.4 : 1);
-    },
+    GOLD: function (e, dt) { gem(e, dt); },
 
-    IRON: function (e, dt) {
-      var hot = nearest(e, 122, isWord('FIRE'));
-      gem(e, dt, hot ? 1.35 : 1);
-      if (hot) {
-        var n = near(e, 132, function (o) { return o.type === 'word' && o !== e && !o.burning; });
-        for (var i = 0; i < n.length; i++) n[i].incomeMul *= 1.15;
-      }
-      var m = near(e, 220, isWord('MAGNET'));
-      for (var j = 0; j < m.length; j++) pull(m[j], e, 150, dt, 52);
-    },
+    RUBY: function (e, dt) { gem(e, dt); },
 
-    RUBY: function (e, dt) {
-      gem(e, dt, nearest(e, 126, isWord('FIRE')) ? 1.35 : 1);
-    },
+    DIAMOND: function (e, dt) { gem(e, dt); },
 
-    EMERALD: function (e, dt) {
-      gem(e, dt, nearest(e, 132, isAnyWord(['TREE', 'SEED'])) ? 1.35 : 1);
-    },
-
-    DIAMOND: function (e, dt) {
-      var lit = nearest(e, 140, isAnyWord(['LAMP', 'SUN', 'GLASS']));
-      gem(e, dt, lit ? 1.35 : 1);
-      if (!lit) return;
-      var n = near(e, 150, function (o) { return o.type === 'word' && o !== e; });
-      for (var i = 0; i < n.length; i++) n[i].incomeMul *= 1.25;
-    },
+    EMERALD: function (e, dt) { gem(e, dt); },
 
     /** 가게: 보석을 사들인다. 가게 위에 잠깐만 올려 두면 그 자리에서 목돈이 된다 */
     SHOP: function (e, dt) {
@@ -825,13 +812,14 @@ G.behaviors = (function () {
       });
       if (!g) { e.data.hold = 0; return; }
 
+      settle(e); settle(g);                  // 값을 치는 동안에는 둘 다 멈춘다
       e.data.hold = (e.data.hold || 0) + dt;
       var p = e.data.hold / C.GEM_HOLD;
       G.fx.linkDots(e.x, e.y, g.x, g.y, Math.min(1, p), dt);
       if (p < 1) return;
 
       e.data.hold = 0;
-      var v = Math.round(C.GEM_PRICE * g.text.length * (g.data.q || 1));
+      var v = Math.round(C.GEM_PRICE * g.text.length * (g.data.worth || 1));
       var gx = g.x, gy = g.y, name = g.text;
       G.board.remove(g);
       G.board.earn(v);
@@ -842,17 +830,16 @@ G.behaviors = (function () {
       G.ui.toast('<b>' + name + '</b> 를 팔았다');
     },
 
-    /* 유령: 겹쳐 선 단어에 씌어 벌이를 부풀린다 */
+    /**
+     * 유령 — 보는 눈이 있으면 나오지 않는다.
+     * 그래서 화면에서는 아무 일도 하지 않는다. 하는 일은 save.js 의 offlineGain
+     * 에 있다 — 자리를 비운 동안의 몫을 한 마리마다 늘려 준다.
+     * 이 게임에서 유일하게 "보지 않을 때" 값을 하는 단어다.
+     */
     GHOST: function (e, dt) {
-      var w = nearest(e, 76, function (o) { return o.type === 'word' && o !== e; });
-      if (!w) return;
-      w.incomeMul *= 1.7;
-      e.incomeMul *= 1.25;
-      e.calm = true;
-      e.data.riding = 1;
-      if (Math.random() < dt * 1.6) {
-        G.fx.spark(w.x + U.rand(-w.w * .4, w.w * .4), w.y - 6, {
-          vx: 0, vy: -14, r: 1.8, life: .9, c: '160,160,200', a: .5
+      if (Math.random() < dt * 1.1) {
+        G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y - 6, {
+          vx: 0, vy: -14, r: 1.8, life: .9, c: '160,160,200', a: .45
         });
       }
     }
@@ -886,120 +873,31 @@ G.behaviors = (function () {
       G.fx.ring(e.x, e.y, { r0: 10, r1: 220, life: .55, c: '150,175,190', lw: 1 });
     },
 
-    /* 비 */
-    rain: function (e) {
-      var R = 172;
-      G.fx.ring(e.x, e.y, { r0: 8, r1: R, life: 1.1, c: '110,150,200', lw: 1.5 });
-      var n = near(e, R, function (o) { return o !== e; });
-      var put = 0;
-      for (var i = 0; i < n.length; i++) {
-        var o = n[i];
-        if (o.burning) { o.extinguish(); put++; }
-        o.data.fresh = 16;
-        if (o.type === 'word' && (o.text === 'TREE' || o.text === 'SEED')) o.data.wet = 14;
-      }
-      for (var j = 0; j < 40; j++) {
-        var a = Math.random() * 6.2832, d = Math.sqrt(Math.random()) * R;
-        G.fx.spark(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - 30, {
-          vx: -6, vy: U.rand(120, 190), g: 30, r: U.rand(.8, 1.4),
-          life: U.rand(.3, .55), c: '110,150,200', a: .55, shape: 'line', drag: 1
-        });
-      }
-      if (put) G.ui.toast('비가 불을 껐다');
-    },
-
-    /* 폭풍 — 돌풍 + 비 + 벼락 */
-    storm: function (e) {
-      ACTIONS.gust(e);
-      ACTIONS.rain(e);
-      G.fx.ring(e.x, e.y, { r0: 14, r1: 250, life: .8, c: '90,105,140', lw: 2 });
-
-      var t = nearest(e, 240, function (o) { return o.type === 'word' && o !== e; });
-      if (!t || !U.chance(.55)) return;
-      G.fx.line(t.x + U.rand(-40, 40), 0, t.x, t.y, { life: .35, c: '235,235,180', lw: 3 });
-      G.fx.burst(t.x, t.y, '235,230,170', 22, 140);
-      if (U.chance(.72)) {
-        t.data.lucky = 26;
-        G.ui.toast('벼락이 <b>' + t.text + '</b> 를 때렸다 — 한동안 미친 듯이 번다');
-      } else {
-        G.ui.toast('벼락이 <b>' + t.text + '</b> 를 때려 글자로 흩어졌다');
-        G.board.explode(t);
-      }
-    },
-
     /* 나무가 글자를 떨어뜨린다 */
     tree: function (e) {
       if (e.burning) return;
-      if (e.data.bugged > 0) {
-        G.fx.spark(e.x, e.y, { vx: 0, vy: -10, r: 2, life: .6, c: '150,150,110', a: .6 });
-        return;
-      }
       if (G.board.count() >= G.maxEntities()) return;
       var L = G.board.spawnLetter(null, e.x + U.rand(-56, 56), e.y + U.rand(34, 64));
       L.vy = 30;
       G.fx.spark(e.x, e.y + 10, { vx: 0, vy: 20, r: 2.2, life: .6, c: '90,165,105', a: .8, shape: 'leaf' });
     },
 
-    /* 고양이가 착지하며 글자를 툭 민다. 쥐가 보이면 그쪽으로 덮친다 */
-    cat: function (e) {
-      if (e.data.purrT > 0) return;              // 골골거리는 중에는 안 움직인다
-      var n = near(e, 96, isLoose);
-      for (var i = 0; i < n.length; i++) n[i].push(e.x, e.y, U.rand(110, 200));
-      if (n.length) G.fx.ring(e.x, e.y, { r0: 6, r1: 90, life: .4, c: '170,150,120', lw: 1 });
-      var m = nearest(e, 220, isWord('MOUSE'));
-      if (m) e.startJump(Math.min(200, U.dist(e.x, e.y, m.x, m.y)), Math.atan2(m.y - e.y, m.x - e.x), .45);
-      else e.startJump(140);
-    },
-
-    /* 개가 글자를 물고 간다 */
+    /* 개가 땅을 파서 무언가를 찾아낸다 — 거의 돈이고, 어쩌다 새 글자다 */
     dog: function (e) {
-      if (e.data.digT > 0) return;
-      var L = nearest(e, 230, function (o) {
-        return o.type === 'letter' && !o.dragging && !o.heldBy;
-      });
-      if (!L) return;
-      e.data.carry = L.id;
-      e.data.carryT = U.rand(5, 9);
-      e.startJump(150);
-      G.fx.spark(e.x, e.y - 10, { vx: 0, vy: -18, r: 1.8, life: .5, c: '160,130,90', a: .7 });
-    },
-
-    /* 자동차가 달린다 */
-    car: function (e) {
-      var road = nearest(e, 200, isWord('ROAD'));
-      var a = Math.random() * Math.PI * 2;
-      if (road) a = Math.atan2(road.y - e.y, road.x - e.x) + U.rand(-.4, .4);
-      e.startJump(road ? 300 : 150, a, road ? 1.0 : 0.75);
-      var self = e;
-      e.onLand = function () {
-        var hit = near(self, 78, function (o) { return o !== self && o.type === 'word'; });
-        for (var i = 0; i < hit.length; i++) hit[i].push(self.x, self.y, 170);
-        var loose = near(self, 130, isLoose);
-        for (var j = 0; j < loose.length; j++) pull(self, loose[j], 110, 1, 44);
-        G.fx.ring(self.x, self.y, { r0: 70, r1: 6, life: .4, c: '170,90,90', lw: 1 });
-        if (road) {
-          var v = reward(0.24, 8);
-          G.board.earn(v);
-          G.ui.floatMoney(self.x, self.y - 20, v);
-        }
-        self.onLand = null;
-      };
-      for (var i = 0; i < 6; i++) {
-        G.fx.spark(e.x - Math.cos(a) * 14, e.y - Math.sin(a) * 14, {
-          vx: -Math.cos(a) * 40, vy: -Math.sin(a) * 40, r: U.rand(1.4, 2.6),
-          life: .6, c: '175,165,160', a: .4
-        });
+      e.startJump(90);
+      if (U.chance(C.DOG_LETTER) && G.board.count() < G.maxEntities()) {
+        var L = G.board.spawnLetter(null, e.x + U.rand(-46, 46), e.y + U.rand(24, 54));
+        L.vy = 26;
+      } else {
+        var v = reward(C.EVENT_CUT, C.EVENT_FLAT);
+        G.board.earn(v);
+        G.ui.floatMoney(e.x, e.y - 18, v);
       }
+      G.fx.burst(e.x, e.y + 14, '150,120,80', 12, 66);
     },
 
-    /* 새가 멀리서 글자를 물어 온다. 벌레가 보이면 먼저 쫓는다 */
+    /* 새가 멀리 날아갔다 낱글자를 하나 물고 돌아온다 */
     bird: function (e) {
-      if (nearest(e, 112, isAnyWord(['NEST', 'TREE']))) return;
-      var bug = nearest(e, 320, isWord('BUG'));
-      if (bug) {
-        e.startJump(Math.min(240, U.dist(e.x, e.y, bug.x, bug.y)), Math.atan2(bug.y - e.y, bug.x - e.x), .5);
-        return;
-      }
       if (G.board.count() >= G.maxEntities()) { e.startJump(160); return; }
       e.startJump(200);
       var self = e;
@@ -1011,148 +909,56 @@ G.behaviors = (function () {
       };
     },
 
-    /**
-     * 상점 잔돈.
-     * 가게의 본업은 보석 매입이고 이건 지나가다 줍는 푼돈이다.
-     * 액수를 보드 전체 수입에 걸어 두었기 때문에, 가게를 여러 채 세우면
-     * 채마다 그 금액을 흘려 벌이가 제곱으로 불어난다. 가게 수로 나눠 그것을 막는다 —
-     * 몇 채를 세우든 잔돈으로 들어오는 총액은 같고, 줍는 수고만 늘어난다.
-     */
-    shop: function (e) {
-      if (e.burning) return;
-      if (G.tokens.count() > 5) return;
-      var shops = G.board.all().filter(isWord('SHOP')).length || 1;
-      var a = Math.random() * 6.2832, d = U.rand(46, 92);
-      var p = G.board.clampPoint(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, { w: 40, h: 40 });
-      var v = Math.max(1, Math.round(reward(0.08, 3) * U.rand(.8, 1.25) / shops));
-      G.tokens.spawn(p.x, p.y, v);
-      G.fx.ring(e.x, e.y, { r0: 6, r1: 60, life: .5, c: '180,110,175', lw: 1 });
-    },
-
-    /* 은행 지급 */
-    bank: function (e) {
-      var v = e.data.vault || 0;
-      if (v < 1) return;
-      e.data.vault = 0;
-      /* 금고 환급은 earn() 을 거치지 않는다 — 다시 30% 를 떼여 돌고 돌기 때문 */
-      var pay = v * 1.18;
-      G.state.money += pay;
-      G.state.totalEarned = (G.state.totalEarned || 0) + pay;
-      G.ui.floatMoney(e.x, e.y - 22, pay);
-      G.fx.coins(e.x, e.y, 14);
-      G.fx.ring(e.x, e.y, { r0: 6, r1: 70, life: .6, c: '70,150,110', lw: 1.5 });
-    },
-
-    /* 운 */
+    /* 운 — 곁의 단어 하나에 행운을 씌운다. 그 단어는 한동안 미친 듯이 번다 */
     luck: function (e) {
-      var roll = U.randInt(0, 5);
-      if (roll === 0 && G.board.count() < G.maxEntities()) {
-        G.board.spawnLetter(null, e.x + U.rand(-70, 70), e.y + U.rand(-50, 50));
-        G.ui.toast('행운: 새 글자');
-      } else if (roll === 1) {
-        var v = reward(0.45, 14);
-        G.board.earn(v); G.ui.floatMoney(e.x, e.y - 20, v);
-        G.fx.coins(e.x, e.y, 12);
-      } else if (roll === 2) {
-        var burning = G.board.all().filter(isBurning);
-        if (burning.length) {
-          burning.forEach(function (o) { o.extinguish(); });
-          G.ui.toast('행운: 소나기가 불을 껐다');
-        } else {
-          G.game.hurrySpawn(0.35);
-          G.ui.toast('행운: 다음 글자가 서둘러 온다');
-        }
-      } else if (roll === 3) {
-        var w = nearest(e, 200, function (o) { return o.type === 'word' && o !== e; });
-        if (w) {
-          w.data.lucky = 12;
-          G.fx.burst(w.x, w.y, '110,200,160', 12, 70);
-        }
-      } else {
-        G.game.freeHint();
-      }
-      G.fx.ring(e.x, e.y, { r0: 4, r1: 50, life: .5, c: '110,200,160', lw: 1 });
-    },
-
-    /* 유령이 놀래킨다 — 단, 무언가에 씌어 있을 때는 얌전하다 */
-    ghost: function (e) {
-      if (e.data.riding) { e.data.riding = 0; return; }
-      var w = nearest(e, 150, function (o) { return o.type === 'word' && o !== e; });
+      var w = nearest(e, 210, function (o) { return o.type === 'word' && o !== e; });
       if (!w) return;
-      var a = Math.atan2(w.y - e.y, w.x - e.x);
-      w.startJump(210, a, .5);
-      w.chill = 0;
-      G.fx.ring(w.x, w.y, { r0: 4, r1: 60, life: .5, c: '140,140,175', lw: 1.5 });
-      for (var i = 0; i < 8; i++) {
-        G.fx.spark(w.x, w.y, {
-          vx: U.rand(-40, 40), vy: U.rand(-50, -10), r: U.rand(2, 4),
-          life: .8, c: '150,150,180', a: .35
-        });
-      }
+      w.data.lucky = C.LUCKY_TIME;
+      G.fx.burst(w.x, w.y, '110,200,160', 14, 78);
+      G.fx.ring(e.x, e.y, { r0: 4, r1: 60, life: .5, c: '110,200,160', lw: 1 });
+      G.ui.toast('<b>' + w.text + '</b> 에 행운이 깃들었다');
     },
 
-    /* 책이 힌트를 밝힌다 */
-    book: function (e) {
-      if (e.burning) return;
-      if (G.game.freeHint()) {
-        G.fx.ring(e.x, e.y, { r0: 6, r1: 66, life: .8, c: '120,135,190', lw: 1.2 });
-        for (var i = 0; i < 8; i++) {
-          G.fx.spark(e.x, e.y - 6, {
-            vx: U.rand(-26, 26), vy: U.rand(-40, -12), r: 1.6,
-            life: 1, c: '130,145,200', a: .7
-          });
-        }
-      }
-    },
-
-    /* 별에게 비는 소원 */
+    /**
+     * 별이 힌트권을 떨군다.
+     * 돈으로 주면 그냥 벌이가 하나 더 늘 뿐이지만, 힌트권으로 주면
+     * 도감을 여는 속도가 빨라진다 — 별이 관여하는 곳이 다른 데가 된다.
+     * 오래 두면 사라지니, 보고 있을 때만 챙길 수 있는 몫이다.
+     */
     star: function (e) {
-      if (U.chance(.35) && G.game.freeHint()) {
-        G.fx.ring(e.x, e.y, { r0: 6, r1: 90, life: .9, c: '225,205,120', lw: 1.4 });
-        return;
-      }
-      var v = reward(0.32, 11);
-      G.board.earn(v); G.ui.floatMoney(e.x, e.y - 20, v);
+      if (G.tokens.count() > 3) return;
+      var a = Math.random() * 6.2832, d = U.rand(52, 96);
+      var p = G.board.clampPoint(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, { w: 40, h: 40 });
+      G.tokens.spawnTicket(p.x, p.y);
+      G.fx.ring(e.x, e.y, { r0: 6, r1: 90, life: .9, c: '225,205,120', lw: 1.4 });
       for (var i = 0; i < 10; i++) {
         G.fx.spark(e.x, e.y, {
           vx: U.rand(-40, 40), vy: U.rand(-50, -10), r: U.rand(1.4, 2.6),
           life: 1, c: '235,215,130', a: .8, shape: 'star'
         });
       }
+      G.ui.toast('힌트권이 떨어졌다 — 사라지기 전에 줍자');
     },
 
-    /* 벌이 꿀을 턴다 */
-    bee: function (e) {
-      if (!nearest(e, 132, isAnyWord(['TREE', 'SEED']))) { e.startJump(120); return; }
-      var v = reward(0.14, 5);
-      G.board.earn(v); G.ui.floatMoney(e.x, e.y - 16, v);
+    /**
+     * 가게가 잔돈을 흘린다.
+     * 저절로 들어오면 그냥 벌이가 조금 오른 것과 다를 바 없으니, 바닥에 떨어뜨린다.
+     * 보고 있으면 주우면 되고, MOUSE 를 세워 두면 대신 주워 온다.
+     */
+    change: function (e) {
+      if (e.burning || G.tokens.count() > 5) return;
+      var a = Math.random() * 6.2832, d = U.rand(46, 88);
+      var p = G.board.clampPoint(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, { w: 40, h: 40 });
+      G.tokens.spawnCoin(p.x, p.y, reward(C.COIN_VALUE, C.COIN_FLAT));
       G.fx.coins(e.x, e.y, 6);
     },
 
-    /* 벌레가 훔쳐간다 */
-    bug: function (e) {
-      var t = nearest(e, 160, function (o) {
-        return o.type === 'word' && o !== e && (o.def.value || 0) >= 4;
-      });
-      if (!t) { e.startJump(90); return; }
-      var steal = Math.min(G.state.money, reward(0.12, 2));
-      if (steal > 0.5) {
-        G.state.money -= steal;
-        G.ui.floatMoney(t.x, t.y - 16, -steal);
-      }
-      e.startJump(80, Math.atan2(t.y - e.y, t.x - e.x));
-      G.fx.spark(t.x, t.y, { vx: U.rand(-20, 20), vy: 10, r: 1.6, life: .5, c: '130,140,70', a: .7 });
-    },
-
-    /* 생쥐가 축낸다 */
-    mouse: function (e) {
-      if (nearest(e, 108, isWord('CHEESE'))) return;
-      var steal = Math.min(G.state.money, reward(0.1, 2));
-      if (steal > 0.5) {
-        G.state.money -= steal;
-        G.ui.floatMoney(e.x, e.y - 14, -steal);
-      }
-      e.startJump(120);
+    /* 벌이 꿀을 턴다 — 나무가 곁에 있을 때만 */
+    bee: function (e) {
+      if (!nearest(e, 132, isWord('TREE'))) { e.startJump(120); return; }
+      var v = reward(C.EVENT_CUT, C.EVENT_FLAT);
+      G.board.earn(v); G.ui.floatMoney(e.x, e.y - 16, v);
+      G.fx.coins(e.x, e.y, 8);
     }
   };
 
@@ -1166,110 +972,35 @@ G.behaviors = (function () {
       G.contacts.clear(a, b, 'ignite', 6);
     },
 
-    douse: function (a, b) {           // a=WATER, b=FIRE
-      b.suppress = 14;
-      G.fx.splash(b.x, b.y);
-      G.contacts.clear(a, b, 'douse', 20);
-    },
-
-    /* 렌즈가 볕을 모아 초점에 불을 붙인다 */
-    focus: function (a, b) {           // a=GLASS, b=SUN
-      var t = nearest(a, 150, function (o) {
-        return o.type === 'word' && o !== a && o.def.flammable && !o.burning;
-      });
-      G.fx.line(b.x, b.y, a.x, a.y, { life: .8, c: '255,240,170', lw: 2.5 });
-      if (t) {
-        G.fx.line(a.x, a.y, t.x, t.y, { life: .8, c: '255,220,120', lw: 2 });
-        t.ignite();
-      } else {
-        var v = reward(0.2, 8);
-        G.board.earn(v); G.ui.floatMoney(a.x, a.y - 20, v);
-      }
-      G.contacts.clear(a, b, 'focus', 25);
-    },
-
+    /**
+     * 열쇠로 상자를 연다. 쌓인 값을 받고 상자는 텅 빈다 —
+     * 안에 넣은 글자는 값으로 바뀐 셈이라 돌아오지 않는다.
+     * 열쇠는 한 번 쓰면 부러진다. 글자 하나만 남고 나머지는 사라지니,
+     * 다음 상자를 열려면 열쇠를 다시 만들어야 한다.
+     */
     unlock: function (a, b) {          // a=KEY, b=BOX
-      var v = b.data.stored || 0;
+      var v = Math.round(b.data.stored || 0);
+      var kept = (b.data.kept || '').length;
+      if (!v && !kept) return;         // 빈 상자에 열쇠를 부러뜨릴 이유는 없다
+
       b.data.stored = 0;
+      b.data.kept = '';
       b.setBadge('');
-      if (v > 1) {
+      if (v > 0) {
         G.board.earn(v);
         G.ui.floatMoney(b.x, b.y - 24, v);
       }
-      var held = near(b, 140, function (o) { return o.type !== 'word'; });
-      for (var i = 0; i < held.length; i++) {
-        held[i].heldBy = null;
-        held[i].push(b.x, b.y, 150);
-      }
       G.fx.coins(b.x, b.y, 14);
       G.fx.ring(b.x, b.y, { r0: 6, r1: 80, life: .6, c: '200,170,80', lw: 1.5 });
-      G.contacts.clear(a, b, 'unlock', 45);
-    },
 
-    purr: function (a, b) {            // a=CAT, b=MILK/MEAT/ROAST
-      a.data.purrT = 34;
-      G.fx.coins(a.x, a.y, 6);
-      G.contacts.clear(a, b, 'purr', 30);
-    },
-
-    dig: function (a, b) {             // a=DOG, b=BONE/MEAT/ROAST
-      a.data.digT = 26;
-      a.data.carry = null;
-      G.fx.burst(a.x, a.y + 12, '160,130,90', 10, 60);
-      G.contacts.clear(a, b, 'dig', 26);
-    },
-
-    hunt: function (a, b) {            // a=CAT, b=MOUSE
-      var x = b.x, y = b.y;
-      G.board.remove(b);
-      G.fx.burst(x, y, '150,140,130', 14, 82);
-      var v = reward(0.3, 10);
-      G.board.earn(v); G.ui.floatMoney(x, y - 14, v);
-      G.ui.toast('CAT 이 MOUSE 를 잡았다');
-    },
-
-    eat: function (a, b) {             // a=BIRD, b=BUG
-      var x = b.x, y = b.y;
-      G.board.remove(b);
-      G.fx.burst(x, y, '110,130,60', 14, 80);
-      var v = reward(0.35, 11);
-      G.board.earn(v); G.ui.floatMoney(x, y - 14, v);
-      G.ui.toast('BIRD 가 BUG 를 잡았다');
-    },
-
-    /* 둥지에 든 새는 알 대신 글자를 떨군다 — EGG 라는 단어는 직접 철자해서 만드는 것이다 */
-    roost: function (a, b) {           // a=BIRD, b=NEST/TREE
-      G.contacts.clear(a, b, 'roost', 24);
-      if (G.board.count() >= G.maxEntities()) return;
-      var L = G.board.spawnLetter(null, b.x + U.rand(-52, 52), b.y + U.rand(30, 58));
-      L.vy = 24;
-      G.fx.ring(b.x, b.y, { r0: 6, r1: 62, life: .6, c: '190,165,120', lw: 1.2 });
-    },
-
-    nibble: function (a, b) {          // a=MOUSE, b=CHEESE
-      var v = reward(0.26, 8);
-      G.board.earn(v); G.ui.floatMoney(b.x, b.y - 20, v);
-      G.fx.coins(b.x, b.y, 8);
-      G.contacts.clear(a, b, 'nibble', 12);
-    },
-
-    banish: function (a, b) {          // a=LAMP, b=GHOST
-      b.startJump(300, Math.atan2(b.y - a.y, b.x - a.x), .7);
-      b.actTimer = Math.max(b.actTimer, 20);
-      G.fx.ring(b.x, b.y, { r0: 4, r1: 90, life: .6, c: '225,195,110', lw: 1.5 });
-      G.ui.toast('LAMP 가 GHOST 를 쫓아냈다');
-      G.contacts.clear(a, b, 'banish', 20);
-    },
-
-    pollen: function (a, b) {          // a=BEE, b=TREE
-      if (!b.burning && G.board.count() < G.maxEntities()) {
-        var L = G.board.spawnLetter(null, b.x + U.rand(-50, 50), b.y + U.rand(30, 58));
-        L.vy = 26;
+      var kx = a.x, ky = a.y, left = a.text.charAt(U.randInt(0, a.text.length - 1));
+      G.board.remove(a);
+      G.fx.burst(kx, ky, '190,165,90', 16, 92);
+      if (G.board.count() < G.maxEntities()) {
+        var L = G.board.spawnLetter(left, kx, ky + 8);
+        L.vy = 40;
       }
-      var v = reward(0.18, 6);
-      G.board.earn(v); G.ui.floatMoney(a.x, a.y - 16, v);
-      G.fx.ring(b.x, b.y, { r0: 6, r1: 66, life: .6, c: '215,185,80', lw: 1.2 });
-      G.contacts.clear(a, b, 'pollen', 14);
+      G.ui.toast('<b>' + b.text + '</b> 를 열었다 · 열쇠는 부러졌다');
     }
   };
 
@@ -1277,12 +1008,56 @@ G.behaviors = (function () {
     /* 익는 중인 것에는 불이 옮지 않는다 — 고기는 타기 전에 먼저 익어야 한다.
        다 익고 나면 보호가 풀리므로, 그때부터는 제때 빼내는 것이 플레이어 몫이다 */
     ignite: function (a, b) {
-      return !b.burning && a.suppress <= 0 && b.chill <= 0 &&
-        !(b.data.ripe > 0 && b.data.ripe < 1);
-    },
-    douse: function (a, b) { return b.suppress <= 0; },
-    focus: function (a, b) { return !a.burning; }
+      return !b.burning && b.chill <= 0 && !(b.data.ripe > 0 && b.data.ripe < 1);
+    }
   };
+
+  /* ==================================================================
+     금고 (BANK)
+     ------------------------------------------------------------------
+     금고는 은행 한 채가 아니라 보드 전체가 함께 쓴다. 예전에는 첫 번째
+     은행에 얹어 두었는데, 그 한 채가 타 버리면 다른 은행이 멀쩡히 서 있어도
+     맡긴 돈이 통째로 사라졌다. 지금은 G.state 에 있으니 은행을 옮겨 지어도
+     맡긴 돈은 그대로다 — 다만 은행이 한 채도 없으면 넣지도 받지도 못한다.
+
+     금고 시계(vaultT)는 이 함수가 불릴 때에만 간다. 이 함수는 board.step 안에
+     있고 board.step 은 보고 있는 동안에만 돌기 때문에, 자리를 비우면 시계는
+     멈춘 자리에 그대로 서 있다가 돌아오면 이어 간다. 방치 보상(offlineGain)도
+     earn() 을 거치지 않으니 자리를 비운 사이의 벌이는 금고로 들어가지 않는다.
+     은행은 켜 두고 굴리는 쪽에 값을 쳐 주는 단어다 — 그 대신 이자를 크게 얹는다.
+     ================================================================== */
+
+  function stepVault(dt, list) {
+    var banks = [], i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].type === 'word' && list[i].text === 'BANK' && !list[i].burning) banks.push(list[i]);
+    }
+    if (!banks.length) return;
+
+    var v = G.state.vault || 0;
+    var rate = G.bankRate(banks.length);
+    G.state.vaultT = (G.state.vaultT || 0) + dt;
+
+    var left = Math.max(0, C.BANK_PERIOD - G.state.vaultT);
+    var tag = Math.round(v) + 'w · ' + Math.ceil(left / 60) + '분';
+    var full = v >= G.vaultMax(banks.length);
+    for (i = 0; i < banks.length; i++) banks[i].setBadge(tag, full ? 'good' : null);
+
+    if (G.state.vaultT < C.BANK_PERIOD) return;
+    G.state.vaultT = 0;
+    G.state.vault = 0;
+    if (v < 1) return;
+
+    /* 지급은 earn() 을 거치지 않는다 — 거치면 받은 돈에서 또 떼어 가 돌고 돈다 */
+    var pay = Math.round(v * (1 + rate));
+    G.state.money += pay;
+    G.state.totalEarned = (G.state.totalEarned || 0) + pay;
+    var b = banks[0];
+    G.ui.floatMoney(b.x, b.y - 22, pay);
+    G.fx.coins(b.x, b.y, 18);
+    G.fx.ring(b.x, b.y, { r0: 6, r1: 78, life: .7, c: '70,150,110', lw: 1.5 });
+    G.ui.toast('금고가 열렸다 · <b>' + U.money(pay) + '</b> (이자 ' + Math.round(rate * 100) + '%)');
+  }
 
   /* ==================================================================
      메인 루프
@@ -1297,9 +1072,8 @@ G.behaviors = (function () {
     for (i = 0; i < list.length; i++) {
       e = list[i];
       e.danger = 0;
-      if (e.data.fresh > 0) { e.data.fresh -= dt; e.incomeMul *= 1.4; }
       if (e.type !== 'word') continue;
-      if (e.data.lucky > 0) { e.data.lucky -= dt; e.incomeMul *= 1.8; }
+      if (e.data.lucky > 0) { e.data.lucky -= dt; e.incomeMul *= C.LUCKY_INCOME; }
       var f = FIELDS[e.text];
       if (f) f(e, dt);
     }
@@ -1318,27 +1092,37 @@ G.behaviors = (function () {
 
     G.contacts.sweep(frameNo);
 
-    /* 3. 주기 행동 */
+    /* 3. 주기 행동 — 20초에 한 번 주사위를 굴린다.
+       예전에는 "26~40초마다 한 번" 처럼 단어마다 다른 주기를 두었는데,
+       설명에 적을 수도 없고(그래서 전부 "가끔" 이었다) 서로 견줄 수도 없었다.
+       지금은 자는 주기가 벌이 주기와 같은 20초로 통일되어 있어,
+       도감에 "20초마다 15%" 라고 그대로 적을 수 있다. */
     for (i = 0; i < list.length; i++) {
       e = list[i];
       if (e.type !== 'word' || !e.def.act) continue;
       var act = ACTIONS[e.def.act];
       if (!act) continue;
-      e.actTimer -= dt * e.speedMul;
+      e.actTimer -= dt;
       if (e.actTimer <= 0) {
-        var iv = e.def.actEvery || [20, 30];
-        e.actTimer = U.rand(iv[0], iv[1]);
-        if (!e.dragging) act(e);
+        e.actTimer += C.PAY_PERIOD;
+        var p = (e.def.actChance || .5) * e.speedMul;
+        if (!e.dragging && Math.random() < p) act(e);
       }
     }
 
-    /* 4. 화재 결과 — 다 타면 글자로 흩어진다 */
+    /* 4. 금고 */
+    stepVault(dt, list);
+
+    /* 5. 화재 결과 — 다 타면 재만 남는다.
+       글자로 흩어지게 두었더니 불이 오히려 이득이었다. 다 탄 자리에서 글자가
+       도로 나오니 잃는 것이 없고, 정원까지 늘어난 꼴이라 일부러 태우는 편이
+       빨랐다. 타면 글자까지 없어져야 불을 무서워한다. */
     for (i = list.length - 1; i >= 0; i--) {
       e = list[i];
       if (!e.burning || e.burnTime <= C.BURN_COLLAPSE) continue;
-      G.ui.toast('<b>' + e.text + '</b> 가 무너져 글자로 흩어졌다');
+      G.ui.toast('<b>' + e.text + '</b> 가 다 타고 재만 남았다');
       G.fx.burst(e.x, e.y, '120,110,105', 26, 130);
-      G.board.explode(e, true);
+      G.board.remove(e);
     }
 
     G.tokens.step(dt);
@@ -1354,13 +1138,14 @@ G.behaviors = (function () {
         var b = cands[ci];
         var g = GUARD[bond.key];
         if (g && !g(a, b)) continue;
-        var rate = Math.min(a.hazardMul, b.hazardMul) * (b.stoke || 1);
+        /* 숯을 물린 불(a)은 더 빨리 옮아붙는다 */
+        var rate = a.stoke || 1;
         var entry = G.contacts.accum(a, b, bond.key, dt * rate);
         var p = Math.max(0, entry.t) / bond.time;
         if (bond.key === 'ignite') {
           if (p > (b.danger || 0)) b.danger = Math.min(1, p);
           if (p > 0.15) G.fx.dangerDots(a.x, a.y, b.x, b.y, Math.min(1, p), dt);
-        } else if (p > 0.25 && bond.key === 'focus') {
+        } else if (p > 0.25) {
           G.fx.linkDots(b.x, b.y, a.x, a.y, Math.min(1, p), dt);
         }
         if (entry.t >= bond.time) {
@@ -1374,6 +1159,8 @@ G.behaviors = (function () {
 
   return {
     step: step, frame: frame,
+    boxRoom: boxRoom, putInBox: putInBox,
+    upLevel: upLevel, upgradable: upgradable, runUpgrade: runUpgrade,
     FIELDS: FIELDS, ACTIONS: ACTIONS, BONDS: BONDS
   };
 })();

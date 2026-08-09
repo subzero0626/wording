@@ -94,7 +94,21 @@ G.board = (function () {
 
   function all() { return ents; }
   function get(id) { return byId[id]; }
-  function count() { return ents.length; }
+  /**
+   * 정원에 잡히는 수.
+   * 오브젝트 하나를 하나로 세면, 자리가 모자랄 때 아무 글자나 둘씩 붙여 세워
+   * 두는 것이 곧 확장이 된다 (뜻 없는 CQ 덩어리 하나 = 한 칸). 그러면
+   * 확장을 살 이유도, 자리가 모자라다는 긴장도 사라진다.
+   * 자리를 돌려주는 것은 **뜻이 있는 단어가 되었을 때**뿐이다 — 뜻 없이 붙여 놓은
+   * 덩어리는 붙여 놓았어도 여전히 글자 수만큼 자리를 먹는다.
+   */
+  function count() {
+    var n = 0;
+    for (var i = 0; i < ents.length; i++) {
+      n += ents[i].type === 'word' ? 1 : ents[i].text.length;
+    }
+    return n;
+  }
 
   function words() {
     var r = [];
@@ -190,10 +204,26 @@ G.board = (function () {
     return e;
   }
 
-  /** 단어/클러스터를 낱글자로 되돌린다 */
-  function explode(e, silent) {
+  /**
+   * 단어/클러스터를 낱글자로 되돌린다.
+   *
+   * 정원이 모자라면 흩지 않는다. 예전에는 그냥 흩어져서, 스무 칸짜리 보드에
+   * 여덟 글자 단어를 분해하면 정원을 일곱이나 넘겨 버렸다 — 새 글자는 안 나오는데
+   * 보드만 미어터지는 상태가 되어 무엇 하나 만들 수 없었다.
+   *
+   * @return 흩었으면 true
+   */
+  function explode(e) {
     var text = e.text, n = text.length;
     var cx = e.x, cy = e.y;
+    /* 지금 이 오브젝트가 먹고 있는 자리(단어는 한 칸, 덩어리는 글자 수)를 빼고
+       셈한다. 뜻 없는 덩어리를 도로 흩는 것은 자리를 늘리지도 줄이지도 않는다 */
+    var mine = e.type === 'word' ? 1 : n;
+    if (count() - mine + n > G.maxEntities()) {
+      G.ui.toast('자리가 모자라 <b>' + text + '</b> 를 흩을 수 없다');
+      G.fx.ring(cx, cy, { r0: 10, r1: 46, life: .4, c: '190,120,110', lw: 1.5 });
+      return false;
+    }
     remove(e);
     for (var i = 0; i < n; i++) {
       var a = (i / n) * Math.PI * 2 + U.rand(-.3, .3);
@@ -202,7 +232,8 @@ G.board = (function () {
       L.vx = Math.cos(a) * 70;
       L.vy = Math.sin(a) * 70;
     }
-    if (!silent) G.fx.burst(cx, cy, '160,155,148', 12, 70);
+    G.fx.burst(cx, cy, '160,155,148', 12, 70);
+    return true;
   }
 
   /* ------------------------------------------------------------------
@@ -211,14 +242,19 @@ G.board = (function () {
   function step(dt) {
     var i, e;
 
-    /* 1. 필드 효과 초기화 (CLOCK/LAMP 같은 장 효과가 매 프레임 다시 칠한다) */
+    /* 1. 필드 효과 초기화 (SUN/MOON 같은 장 효과가 매 프레임 다시 칠한다) */
     for (i = 0; i < ents.length; i++) {
       e = ents[i];
       e.speedMul = 1;
-      e.hazardMul = 1;
       e.incomeMul = 1;
+      e.payMul = 1;           // SUN 이 당기는 벌이 주기
       e.gearMul = 1;          // 톱니바퀴가 맞물려 얻는 배수 (상한과 따로 논다)
-      e.stoke = 1;            // COAL 이 지핀 불은 더 빨리 굽고 태운다
+      /* 숯이 지핀 불기운과 상자에 들어앉은 고양이. 다른 장 효과와 달리 짧게
+         남겨 두는데, 둘 중 어느 쪽 차례가 먼저 오든 같게 굴리려는 것이다 */
+      e.data.stokeT = Math.max(0, (e.data.stokeT || 0) - dt);
+      e.stoke = e.data.stokeT > 0 ? C.COAL_STOKE : 1;
+      e.data.catT = Math.max(0, (e.data.catT || 0) - dt);
+      e.boxMul = e.data.catT > 0 ? C.CAT_BOX : 1;
       e.calm = false;
       e.heldBy = null;
     }
@@ -250,6 +286,70 @@ G.board = (function () {
     return drag.type !== 'word' && other.type !== 'word';  // 글자끼리는 자유롭게 겹친다
   }
 
+  /**
+   * 이 둘이 서로를 밀어내기 시작하는 거리.
+   * 보통은 글자 상자보다 PUSH_SHRINK 만큼 좁게 잡는다 — 딱 맞게 잡으면
+   * 스치기만 해도 서로 비켜서서 보드가 실제보다 빽빽해 보인다.
+   * 자석끼리만은 같은 극처럼 굴어 보통 거리의 몇 배로 벌어진다.
+   * 벽에는 이 너그러움을 주지 않는다 — 벽은 파고들 수 없어야 벽이다.
+   */
+  function pushBox(e, other) {
+    var mul = (e.type === 'word' && other.type === 'word' &&
+      e.text === 'MAGNET' && other.text === 'MAGNET') ? C.MAGNET_PUSH : 1;
+    var shrink = (isSolid(e) || isSolid(other)) ? 0 : C.PUSH_SHRINK;
+    return {
+      x: e.x, y: e.y,
+      w: Math.max(8, e.w * mul - shrink),
+      h: Math.max(8, e.h * mul - shrink)
+    };
+  }
+
+  /* ------------------------------------------------------------------
+     벽 — 지나갈 수 없는 것
+     ------------------------------------------------------------------
+     WALL 은 제자리에서 꿈쩍하지 않고, 뛰어다니는 것들이 그 너머로 넘어가지
+     못하게 막는다. 밀어내기(separate)만으로는 벽이 되지 않는다 — 점프는
+     출발점에서 도착점으로 곧장 이어 붙이는 것이라, 벽 위를 훌쩍 건너뛰어
+     반대편에 내려앉아 버리기 때문이다. 그래서 뛸 자리를 고를 때 아예
+     "가는 길에 벽이 있는가" 를 묻고, 관성으로 미끄러질 때에도 같은 것을 묻는다.
+     들고 옮기는 손만은 막지 않는다. 무엇을 어느 쪽에 둘지 정하는 것이
+     이 단어를 세우는 이유인데, 그 결정까지 막으면 벽이 아니라 함정이 된다. */
+
+  function isSolid(e) {
+    return e.type === 'word' && e.def && e.def.solid && !e.dragging;
+  }
+
+  /** 선분이 사각형과 닿는가 (Liang-Barsky) */
+  function segBox(x0, y0, x1, y1, cx, cy, hw, hh) {
+    var dx = x1 - x0, dy = y1 - y0, t0 = 0, t1 = 1;
+    var p = [-dx, dx, -dy, dy];
+    var q = [x0 - (cx - hw), (cx + hw) - x0, y0 - (cy - hh), (cy + hh) - y0];
+    for (var i = 0; i < 4; i++) {
+      if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+      var r = q[i] / p[i];
+      if (p[i] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+      else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return true;
+  }
+
+  /**
+   * (x0,y0) 에서 (x1,y1) 로 가는 길을 벽이 막고 있는가.
+   * 이미 벽에 걸쳐 서 있는 것은 그 벽을 무시한다 — 그러지 않으면 어느 쪽으로도
+   * 못 가고 영영 붙박인다 (밀어내기가 곧 밖으로 빼 준다).
+   */
+  function blocked(x0, y0, x1, y1, ent) {
+    var hw = ent ? ent.w / 2 : 6, hh = ent ? ent.h / 2 : 6;
+    for (var i = 0; i < ents.length; i++) {
+      var w = ents[i];
+      if (w === ent || !isSolid(w)) continue;
+      var bw = w.w / 2 + hw - C.PUSH_SHRINK, bh = w.h / 2 + hh - C.PUSH_SHRINK;
+      if (segBox(x0, y0, x0, y0, w.x, w.y, bw, bh)) continue;   // 이미 걸쳐 있다
+      if (segBox(x0, y0, x1, y1, w.x, w.y, bw, bh)) return true;
+    }
+    return false;
+  }
+
   function separate(dt) {
     var n = ents.length, i, j, a, b, ov;
     for (i = 0; i < n; i++) {
@@ -259,7 +359,7 @@ G.board = (function () {
         b = ents[j];
         if (b.def && b.def.ghost) continue;
         if (noPush(a, b)) continue;
-        ov = U.overlap(a, b);
+        ov = U.overlap(pushBox(a, b), pushBox(b, a));
         if (!ov) continue;
 
         var pushX = 0, pushY = 0;
@@ -301,7 +401,7 @@ G.board = (function () {
   /** 보드 전체가 20초에 버는 총액 (표시용) */
   function payRate() {
     var sum = 0;
-    for (var i = 0; i < ents.length; i++) sum += ents[i].income();
+    for (var i = 0; i < ents.length; i++) sum += ents[i].rate();
     return sum;
   }
 
@@ -311,15 +411,19 @@ G.board = (function () {
    */
   function earn(amount) {
     if (amount <= 0) return;
-    var banks = [];
+    var banks = 0;
     for (var i = 0; i < ents.length; i++) {
-      if (ents[i].type === 'word' && ents[i].text === 'BANK' && !ents[i].burning) banks.push(ents[i]);
+      if (ents[i].type === 'word' && ents[i].text === 'BANK' && !ents[i].burning) banks++;
     }
-    if (banks.length) {
-      var cut = amount * Math.min(0.3, 0.22 * banks.length);
-      amount -= cut;
-      var b = banks[0];
-      b.data.vault = (b.data.vault || 0) + cut;
+    if (banks) {
+      /* 금고가 꽉 차면 더 떼어 가지 않는다 — 맡길 데가 없는데 계속 떼면
+         은행이 서 있는 것 자체가 손해가 된다 */
+      var room = G.vaultMax(banks) - (G.state.vault || 0);
+      if (room > 0) {
+        var cut = Math.min(room, amount * G.C.BANK_CUT);
+        amount -= cut;
+        G.state.vault = (G.state.vault || 0) + cut;
+      }
     }
     G.state.money += amount;
     G.state.totalEarned = (G.state.totalEarned || 0) + amount;
@@ -358,6 +462,7 @@ G.board = (function () {
     words: words, loose: loose, near: near, nearest: nearest,
     clampPoint: clampPoint, crowdScore: crowdScore, freeSpot: freeSpot,
     spawnLetter: spawnLetter, makeWord: makeWord, explode: explode,
+    blocked: blocked,
     step: step, earn: earn, spend: spend, payRate: payRate,
     expandCost: expandCost, expand: expand,
     get el() { return playEl; }

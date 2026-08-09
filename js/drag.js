@@ -18,6 +18,8 @@ G.drag = (function () {
   var snap = null;         // {target, side, x, y, armed}
   var holdT = 0;           // 같은 단어에 대고 있은 시간
   var outside = false;     // 보드 밖 = 판매 대기
+  var dev = null;          // 지금 올려놓은 장치 (BOX · FORGE)
+  var devT = 0;            // 장치 위에 대고 있은 시간
   var snapEl, hintEl, playEl;
 
   function init() {
@@ -61,6 +63,7 @@ G.drag = (function () {
     cur = e;
     moved = false;
     holdT = 0;
+    dev = null; devT = 0;
     outside = false;
     var p = localPoint(ev);
     offX = e.x - p.x;
@@ -111,6 +114,7 @@ G.drag = (function () {
       return;
     }
 
+    updateDevice();
     updateSnap();
     var tx = rawX, ty = rawY;
     if (snap) {
@@ -120,15 +124,91 @@ G.drag = (function () {
     var c = G.board.clampPoint(tx, ty, cur);
     cur.x = c.x; cur.y = c.y;
     cur.render();
-    paintSnap();
+    if (dev) paintDevice(); else paintSnap();
+  }
+
+  /* ------------------------------------------------------------------
+     장치에 넣기 — BOX 와 FORGE
+
+     붙여서 단어를 만드는 것과는 다른 길이다. 옆에 갖다 대는 것이 아니라
+     위에 올려놓고 잠깐 기다리는 것이고, 한번 들어가면 되돌릴 수 없다.
+     그래서 스냅선 대신 진행 막대를 띄워 "지금 무슨 일이 벌어지는지" 를 먼저 보인다.
+     ------------------------------------------------------------------ */
+
+  /** 지금 끌고 있는 것을 받아 줄 장치가 발밑에 있는가 */
+  function findDevice() {
+    if (!cur || cur.afflicted()) return null;
+    var list = G.board.all();
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o === cur || o.type !== 'word' || o.burning) continue;
+      if (!U.overlap({ x: rawX, y: rawY, w: cur.w * .5, h: cur.h * .5 }, o)) continue;
+
+      if (o.text === 'BOX' && cur.type === 'letter') {
+        return G.behaviors.boxRoom(o) > 0
+          ? { t: o, kind: 'box', label: '상자에 넣기', full: false }
+          : { t: o, kind: null, label: '상자가 가득 찼다', full: true };
+      }
+      if (o.text === 'FORGE' && cur.type === 'word') {
+        if (!G.behaviors.upgradable(cur)) {
+          return { t: o, kind: null, full: true, label: G.WORD_BY_ID[cur.text]
+            ? '능력 단어는 걸 수 없다' : '더 올릴 수 없다' };
+        }
+        var lv = G.behaviors.upLevel(cur);
+        return {
+          t: o, kind: 'up', full: false,
+          label: (lv + 1) + '강 · 성공 ' + Math.round(C.UP_ODDS[lv] * 100) + '%'
+        };
+      }
+    }
+    return null;
+  }
+
+  function updateDevice() {
+    var d = findDevice();
+    if (!d || !dev || d.t !== dev.t || d.kind !== dev.kind) devT = 0;
+    dev = d;
+  }
+
+  function paintDevice() {
+    if (!dev) return;
+    if (lastTarget) { lastTarget.el.classList.remove('snaptarget'); lastTarget = null; }
+    snapEl.classList.remove('on');
+    var need = dev.kind === 'up' ? C.UP_HOLD : C.BOX_HOLD;
+    var p = dev.kind ? Math.min(1, devT / need) : 0;
+    hintEl.querySelector('.sh-t').textContent = dev.label;
+    hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
+    hintEl.classList.remove('ability', 'growing');
+    hintEl.classList.toggle('waiting', p < 1);
+    hintEl.classList.toggle('risky', dev.kind === 'up');
+    hintEl.style.color = '';
+    hintEl.classList.add('on');
+    hintEl.style.transform = 'translate(' + Math.round(dev.t.x) + 'px,' +
+      Math.round(dev.t.y - dev.t.h / 2 - 28) + 'px) translateX(-50%)';
+  }
+
+  /** 대고 있던 시간이 다 찼다 */
+  function runDevice() {
+    var d = dev, e = cur;
+    dev = null; devT = 0;
+    clearSnap();
+    cancel();                                   // 손에서 놓은 것으로 친다
+    if (d.kind === 'box') G.behaviors.putInBox(d.t, e);
+    else if (d.kind === 'up') G.behaviors.runUpgrade(d.t, e);
   }
 
   /**
    * 버릴 수 있는 것은 낱글자뿐이다.
    * 덩어리도 애써 붙여 놓은 것이고 더 긴 단어로 가는 도중일 수 있으니 지키고,
    * 정말 흩고 싶으면 더블클릭으로 낱글자로 되돌린 뒤 하나씩 버리면 된다.
+   *
+   * 예외가 하나 있다. 파는 것이 곧 쓰는 것인 단어(TIME)는 완성된 채로도 끌어낼 수 있다.
    */
-  function sellable(e) { return !!e && e.type === 'letter'; }
+  function sellable(e) {
+    if (!e) return false;
+    if (e.type === 'letter') return true;
+    return e.type === 'word' && !!e.def.sellable && !e.afflicted();
+  }
 
   /**
    * 완성된 단어에 붙이는 것인가.
@@ -138,9 +218,17 @@ G.drag = (function () {
     return target.type === 'word';
   }
 
-  /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이려면 시간이 걸린다 */
+  /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이거나 장치에 넣으려면 시간이 걸린다 */
   function tick(dt) {
     if (!cur) return;
+    if (dev) {
+      if (dev.kind) {
+        devT += dt;
+        if (devT >= (dev.kind === 'up' ? C.UP_HOLD : C.BOX_HOLD)) { runDevice(); return; }
+      }
+      paintDevice();
+      return;
+    }
     if (snap && needsHold(snap.target)) {
       holdT += dt;
       if (holdT >= C.WORD_HOLD && !snap.armed) {
@@ -163,6 +251,7 @@ G.drag = (function () {
     var wasOutside = outside;
     clearSnap();
     cur = null;
+    dev = null; devT = 0;
     outside = false;
 
     if (wasOutside && moved) {
@@ -185,8 +274,14 @@ G.drag = (function () {
      재화는 주지 않고, 남은 생성 쿨다운만 당겨 준다.
      ------------------------------------------------------------------ */
   function sell(e) {
+    var time = e.type === 'word' && e.text === 'TIME';
+    if (time) {
+      G.fx.burst(e.x, e.y, '140,138,170', 22, 110);
+      G.fx.ring(e.x, e.y, { r0: 6, r1: 88, life: .7, c: '140,138,170', lw: 1.6 });
+    }
     G.board.remove(e);
-    G.state.spawnTimer *= C.SELL_COOLDOWN_CUT;
+    if (time) G.game.sellTime();
+    G.game.soldOne();
     G.ui.pulseGauge();
   }
 
@@ -228,6 +323,7 @@ G.drag = (function () {
     var prev = snap;
     snap = null;
     if (!cur || cur.type === 'word' || cur.afflicted()) return;
+    if (dev) { holdT = 0; return; }        // 장치 위에 올려 둔 동안은 붙이지 않는다
 
     var list = G.board.all(), best = null;
     for (var i = 0; i < list.length; i++) {
@@ -287,6 +383,7 @@ G.drag = (function () {
       lastTarget.el.classList.remove('snaptarget');
       lastTarget = null;
     }
+    hintEl.classList.remove('risky');
     if (!snap || !G.state.opt.snapHint) {
       snapEl.classList.remove('on');
       hintEl.classList.remove('on');
@@ -409,6 +506,7 @@ G.drag = (function () {
       cur = null;
     }
     clearSnap();
+    dev = null; devT = 0;
     outside = false;
   }
 

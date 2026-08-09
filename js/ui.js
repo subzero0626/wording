@@ -54,7 +54,7 @@ G.ui = (function () {
       ev.stopPropagation();
       if (G.game.buySpawnUpgrade()) { renderSpawnPop(); }
     });
-    /* --- 재화(또는 도감 안의 힌트권 띠)를 누르면 구매창 --- */
+    /* --- 재화(또는 도감 머리글의 힌트권)를 누르면 구매창 --- */
     elMoney.addEventListener('click', function (ev) {
       ev.stopPropagation();
       if (elTicketPop.classList.contains('hidden')) openTicketPop();
@@ -157,6 +157,7 @@ G.ui = (function () {
       : '다음 글자 ' + U.secs(left);
     if (!elSpawnPop.classList.contains('hidden')) renderSpawnPop();
     if (!elTicketPop.classList.contains('hidden')) renderTicketPop();
+    if (popEnt) renderPayLine();
     if (chipEdge) updateChip();
   }
 
@@ -216,23 +217,29 @@ G.ui = (function () {
     renderSpawnPop();
   }
 
+  /* 여기 적는 초는 SPAWN_STEPS 값이 아니라 실제로 기다리는 시간이다 —
+     TIME 을 팔았거나 CLOCK 을 세워 두었으면 그만큼 이미 짧아져 있다.
+     표에 적힌 값과 게이지가 어긋나 보이는 쪽이 훨씬 헷갈린다 */
+  function secs(v) { return (Math.round(v * 10) / 10) + '초'; }
+
   function renderSpawnPop() {
     var lv = G.state.spawnLevel;
-    var cur = C.SPAWN_STEPS[lv];
+    var cut = C.SPAWN_STEPS[lv] - G.game.spawnInterval();
+    var cur = G.game.spawnInterval();
     var isMax = lv >= C.SPAWN_STEPS.length - 1;
-    document.getElementById('popCur').textContent = cur + '초';
+    document.getElementById('popCur').textContent = secs(cur);
     var btn = document.getElementById('popBuy');
     if (isMax) {
-      document.getElementById('popFrom').textContent = cur + '초';
+      document.getElementById('popFrom').textContent = secs(cur);
       document.getElementById('popTo').textContent = '최소';
       document.getElementById('popCost').textContent = '—';
       btn.disabled = true;
       btn.textContent = '더 줄일 수 없음';
     } else {
-      var next = C.SPAWN_STEPS[lv + 1];
+      var next = Math.max(C.SPAWN_FLOOR, C.SPAWN_STEPS[lv + 1] - cut);
       var cost = C.SPAWN_COSTS[lv];
-      document.getElementById('popFrom').textContent = cur + '초';
-      document.getElementById('popTo').textContent = next + '초';
+      document.getElementById('popFrom').textContent = secs(cur);
+      document.getElementById('popTo').textContent = secs(next);
       document.getElementById('popCost').textContent = U.money(cost);
       btn.disabled = G.state.money < cost;
       btn.textContent = '단축';
@@ -291,15 +298,13 @@ G.ui = (function () {
     var d = ent.def;
     var word = ent.text;
 
-    elWordPop.querySelector('.wp-name').textContent = word;
+    var lv = (ent.data && ent.data.up) || 0;
+    elWordPop.querySelector('.wp-name').textContent =
+      word + (lv ? ' ' + new Array(lv + 1).join('★') : '');
     elWordPop.querySelector('.wp-name').style.color = d.color.fg;
 
-    /* 특이한 방식으로 버는 단어는 액수 대신 벌이의 성격을 적는다.
-       보석에 "20초마다 8w" 를 띄우면 파는 값과 헷갈리기만 한다 */
-    var payEl = elWordPop.querySelector('.wp-pay');
-    var note = G.PAY_NOTE[d.id];
-    payEl.textContent = note || (C.PAY_PERIOD + '초마다 ' + U.money(d.value));
-    payEl.classList.toggle('note', !!note);
+    popEnt = ent;
+    renderPayLine();
 
     var posEl = elWordPop.querySelector('.wp-pos');
     var baseEl = elWordPop.querySelector('.wp-base');
@@ -342,8 +347,26 @@ G.ui = (function () {
     elWordPop.style.top = U.clamp(cy + 22, 8, window.innerHeight - h - 8) + 'px';
   }
   var popToken = 0;
+  var popEnt = null;
+
+  /**
+   * 벌이 줄 — 지금 이 자리에서 실제로 들어오는 값을 그대로 적는다.
+   * 곁에 SUN 이 서면 "16초마다", MOON 이 서면 액수 쪽이 움직인다.
+   * 예전에는 그런 단어에 문장 한 줄을 대신 띄웠는데, 정작 궁금한 것은
+   * 지금 얼마를 버느냐이므로 숫자를 살려 두고 살아 움직이게 했다.
+   */
+  function renderPayLine() {
+    if (!popEnt) return;
+    if (!G.board.get(popEnt.id)) { closePopovers(); return; }
+    var sec = Math.max(1, Math.round(C.PAY_PERIOD / popEnt.haste()));
+    var v = popEnt.income();
+    /* 실제로 넣어 주는 액수와 같은 식으로 반올림한다 (entity.update) */
+    elWordPop.querySelector('.wp-pay').textContent =
+      sec + '초마다 ' + U.money(v > 0 ? Math.max(1, Math.round(v)) : 0);
+  }
 
   function closePopovers() {
+    popEnt = null;
     elSpawnPop.classList.add('hidden');
     elWordPop.classList.add('hidden');
     elTicketPop.classList.add('hidden');
@@ -510,37 +533,42 @@ G.ui = (function () {
       var hint = G.state.hints[w.id] || 0;
       /* 잠긴 칸은 칸 자체가 버튼이다 — 누르면 다음 단계가 바로 열린다 */
       var open = !got && G.hintTickets(hint) > 0;
+      /* 찾은 칸도 누를 수 있다 — 누르면 설명이 수치까지 적힌 쪽으로 바뀐다 */
+      var deep = got && !!G.DETAIL[w.id];
+      var on = deep && !!cxDeep[w.id];
       html += '<div class="cx' + (got ? '' : ' locked') + (open ? ' askable' : '') +
-        (open ? '" data-w="' + w.id : '') + '">';
+        (deep ? ' deepable' : '') + (on ? ' deep' : '') +
+        (open || deep ? '" data-w="' + w.id : '') + '">';
       html += '<div class="dot" style="--c:' + (got ? w.color.fg : '') + '"></div>';
       html += '<div class="mid">';
       if (got) {
         html += '<div class="n">' + w.id + '</div>';
         html += '<div class="k">' + w.kind + '</div>';
-        html += '<div class="d">' + maskUnknown(w.desc) + '</div>';
+        html += '<div class="d">' +
+          maskUnknown(on ? G.DETAIL[w.id] : w.desc) + '</div>';
       } else {
-        /* 3단계에서는 앞에서부터 여러 글자가, 1단계에서는 첫 글자만 드러난다 */
+        /* 3단계에서는 앞에서부터 여러 글자가, 1단계에서는 첫 글자만 드러난다.
+           드러난 글자는 진하게 — 물음표에 섞여 회색이면 어디까지 열렸는지 안 보인다 */
         var shown = hint >= 3 ? G.hintReveal(w.id.length) : (hint >= 1 ? 1 : 0);
         var mask = '';
-        for (var i = 0; i < w.id.length; i++) mask += i < shown ? w.id[i] : '?';
+        for (var i = 0; i < w.id.length; i++) {
+          mask += i < shown ? '<b>' + w.id[i] + '</b>' : '?';
+        }
         html += '<div class="n">' + mask + '</div>';
         html += '<div class="k">' + (hint >= 1 ? w.kind : w.id.length + ' 글자') + '</div>';
         if (hint >= 2) html += '<div class="d">' + maskUnknown(w.hint) + '</div>';
+      }
+      html += '</div>';
+      /* 값은 줄 오른쪽 끝에 하나만 세워 둔다.
+         이름 아래에 한 줄을 더 깔면 서른일곱 칸이 전부 세 줄이 되어 목록이 뭉개진다. */
+      if (!got) {
         var need = G.hintTickets(hint);
         if (need) {
-          /* 값만 적어 두면 눌러도 되는 자리인지, 눌러서 뭘 얻는지 알 수 없다.
-             단계 표시 · 값 · 무엇이 열리는지를 한 줄에 같이 놓는다. */
-          var pips = '';
-          for (var p = 0; p < G.HINT_MAX; p++) {
-            pips += '<i class="pip' + (p < hint ? ' on' : '') + '"></i>';
-          }
           html += '<div class="ask' + (G.state.tickets >= need ? '' : ' poor') + '">' +
-            '<span class="pips">' + pips + '</span>' +
-            '<span class="cost">힌트권 ' + need + '장</span>' +
-            '<span class="gain">' + C.HINT_GAIN[hint] + '</span></div>';
+            need + '<em>장</em></div>';
         }
       }
-      html += '</div></div>';
+      html += '</div>';
     });
     elCodexList.innerHTML = html;
     elCodexCount.textContent = found + ' / ' + G.WORDS.length;
@@ -550,17 +578,23 @@ G.ui = (function () {
       ? '그 밖에 만들어 본 단어 <b>' + made + '</b>개 · 사전에 있는 단어라면 무엇이든 만들 수 있다'
       : '보드에서 글자를 끌어다 붙이면 단어가 됩니다.';
 
-    elCodexTickets.querySelector('.ct-n').textContent = G.state.tickets + '장';
+    elCodexTickets.querySelector('.ct-n').textContent = G.state.tickets;
     elCodexTickets.classList.toggle('empty', !G.state.tickets);
 
-    var rows = elCodexList.querySelectorAll('.askable');
+    var rows = elCodexList.querySelectorAll('.cx[data-w]');
     for (var b = 0; b < rows.length; b++) {
       rows[b].addEventListener('click', function (ev) {
         ev.stopPropagation();
-        spendHint(this.dataset.w);
+        var id = this.dataset.w;
+        if (this.classList.contains('askable')) { spendHint(id); return; }
+        cxDeep[id] = !cxDeep[id];
+        renderCodex();
       });
     }
   }
+
+  /* 도감에서 수치까지 펼쳐 둔 칸. 여러 칸을 같이 펼쳐 두고 견줄 수 있게 둔다 */
+  var cxDeep = {};
 
   /** 도감 칸을 누르면 다음 단계가 바로 열린다 — 확인 절차를 두지 않는다 */
   function spendHint(id) {

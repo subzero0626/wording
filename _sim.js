@@ -38,13 +38,18 @@ for (let i = 0; i < 30 * 90; i++) {
 for (const [t, m] of marks) console.log('  ' + t.toFixed(0).padStart(3) + '초   ' + m);
 console.log('\n  띄운 안내문: ' + (log.length ? log.join(' / ') : '없음'));
 console.log('  보드에 남은 것: ' + G.board.all().map(e => e.text).join(', ') +
-  '   (ROAST 가 생기지 않아야 정상)');
+  '   (다른 단어로 바뀌지 않아야 정상)');
 
 /* 제때 빼면 익은 채로 남는다 — 식어서 되돌아가지 않는다 */
 clear();
 const m2 = G.board.makeWord('MEAT', 480, 300);
 const f3 = G.board.makeWord('FIRE', 480 + m2.w / 2 + 30 + 8, 300);
-for (let i = 0; i < 30 * 30; i++) { m2.x = 480; m2.y = 300; G.board.step(DT); }
+const f3x = 480 + m2.w / 2 + 30 + 8;
+for (let i = 0; i < 30 * 15; i++) {
+  m2.x = 480; m2.y = 300; m2.vx = m2.vy = 0;
+  f3.x = f3x; f3.y = 300; f3.vx = f3.vy = 0;
+  G.board.step(DT);
+}
 const wasRipe = m2.data.ripe || 0, wasMul = m2.incomeMul;
 G.board.remove(f3);
 for (let i = 0; i < 30 * 120; i++) G.board.step(DT);                  // 2분 방치
@@ -57,7 +62,7 @@ console.log('\n  제때 불에서 빼면: 익은 정도 ' + wasRipe.toFixed(2) +
 /* 나머지 무르익음 — 짝을 붙여 두면 익고, 글자는 그대로여야 한다 */
 console.log('\n\n무르익는 것들 (짝을 곁에 두고 3분)\n');
 console.log('  단어    짝        3분 뒤   익은 정도   벌이');
-for (const [word, mate] of [['MEAT', 'FIRE'], ['MILK', 'TIME'], ['SEED', 'SUN'], ['EGG', 'NEST']]) {
+for (const [word, mate] of [['MEAT', 'FIRE'], ['SEED', 'WATER'], ['SEED', 'ICE']]) {
   clear();
   const a = G.board.makeWord(word, 420, 300);
   const b = G.board.makeWord(mate, 420 + a.w / 2 + 26, 300);
@@ -76,9 +81,8 @@ for (const [word, mate] of [['MEAT', 'FIRE'], ['MILK', 'TIME'], ['SEED', 'SUN'],
 
 /* 변신이 정말 사라졌는가 — 예전 조리법을 하나씩 다시 걸어 본다 */
 console.log('\n\n예전 변신 조리법을 다시 걸어 보면 (각 3분)\n');
-for (const [a1, b1, gone] of [['SAND', 'FIRE', 'GLASS'], ['ICE', 'FIRE', 'WATER'],
-['ROCK', 'RIVER', 'SAND'], ['WATER', 'FIRE', 'STEAM'], ['MILK', 'TIME', 'CHEESE'],
-['SEED', 'SUN', 'TREE'], ['EGG', 'NEST', 'BIRD']]) {
+for (const [a1, b1, gone] of [['MEAT', 'FIRE', 'ROAST'], ['ICE', 'FIRE', 'WATER'],
+['SEED', 'WATER', 'TREE']]) {
   clear();
   const a = G.board.makeWord(a1, 420, 300);
   const b = G.board.makeWord(b1, 420 + a.w / 2 + 26, 300);
@@ -92,91 +96,521 @@ for (const [a1, b1, gone] of [['SAND', 'FIRE', 'GLASS'], ['ICE', 'FIRE', 'WATER'
     (made ? '아직 변신한다 (문제)' : '생기지 않는다'));
 }
 
-/* 2.5 ─ 변신 대신 들어온 상호작용이 실제로 도는가 ---------------------- */
-console.log('\n\n변신 자리에 들어온 상호작용\n');
+/* 2.5 ─ 능력이 하나씩만 도는가 ---------------------------------------- */
+console.log('\n\n한 단어에 능력 하나\n');
 
-/* 모래가 타는 것을 덮어 끈다 */
+/* 곁에 세워 두고 무엇이 달라지는지를 항목별로 잰다.
+   SUN 은 주기만, MOON 은 액수만 건드려야 한다 */
+{
+  console.log('  곁에 둔 단어    벌이 액수   벌이 주기   하는 일 속도');
+  for (const mate of ['SUN', 'MOON', '(없음)']) {
+    clear();
+    const t = G.board.makeWord('TREE', 400, 300);
+    let b = null;
+    if (mate !== '(없음)') b = G.board.makeWord(mate, 400 + t.w / 2 + 26, 300);
+    for (let i = 0; i < 30 * 3; i++) {
+      t.x = 400; t.y = 300; t.vx = t.vy = 0;
+      if (b) { b.x = 400 + t.w / 2 + 26; b.y = 300; b.vx = b.vy = 0; }
+      G.board.step(DT);
+    }
+    console.log('  ' + mate.padEnd(15) +
+      ('×' + t.incomeMul.toFixed(2)).padStart(9) +
+      ('×' + t.haste().toFixed(2)).padStart(12) +
+      ('×' + t.speedMul.toFixed(2)).padStart(14));
+  }
+  console.log('  (한 줄에 배수가 하나만 서 있어야 능력이 하나인 것이다)');
+}
+
+/* 별이 힌트권을 떨구고, 주우면 손에 들어오고, 안 주우면 사라진다 */
+{
+  clear();
+  G.state.tickets = 0;
+  const s = G.board.makeWord('STAR', 400, 300);
+  let dropped = 0, secs = 3600;   // 확률을 1/5 로 낮췄으니 넉넉히 굴려야 한 장 본다
+  for (let i = 0; i < 30 * secs; i++) {
+    s.x = 400; s.y = 300; s.vx = s.vy = 0;
+    G.board.step(DT);
+    if (G.tokens.count() > dropped) dropped = G.tokens.count();
+  }
+  console.log('\n  STAR 를 ' + secs + '초 두면 힌트권이 ' + (dropped ? '떨어진다' : '안 떨어진다') +
+    ' · 안 주우면 ' + C.TICKET_DROP_LIFE + '초 뒤 사라진다 (지금 남은 것 ' +
+    G.tokens.count() + '장)');
+  console.log('  주웠을 때 손에 들어온 장수 ' + G.state.tickets + '장' +
+    '  (줍지 않으면 0 이어야 정상)');
+}
+
+/* 숯이 불을 지피면 굽는 속도가 실제로 빨라지는가 */
+{
+  const at = [];
+  for (const withCoal of [false, true]) {
+    clear();
+    const m = G.board.makeWord('MEAT', 420, 300);
+    const fx = 420 + m.w / 2 + 30 + 8;
+    const f = G.board.makeWord('FIRE', fx, 300);
+    let c = null;
+    if (withCoal) c = G.board.makeWord('COAL', fx + 40, 300);
+    let t = 0, done = 0;
+    for (let i = 0; i < 30 * 60; i++) {
+      t += DT;
+      m.x = 420; m.y = 300; m.vx = m.vy = 0;
+      f.x = fx; f.y = 300; f.vx = f.vy = 0;
+      if (c) { c.x = fx + 40; c.y = 300; c.vx = c.vy = 0; }
+      G.board.step(DT);
+      if (!done && (m.data.ripe || 0) >= 1) { done = t; break; }
+    }
+    at.push(done);
+  }
+  console.log('\n  고기가 다 익는 데 걸린 시간   불만 ' + at[0].toFixed(0) +
+    '초 · 숯을 물리면 ' + at[1].toFixed(0) + '초');
+}
+
+/* 상자는 넣어 준 글자만 세고, 고양이가 들어앉으면 더 빨리 쌓는다 */
+{
+  const got = [];
+  for (const withCat of [false, true]) {
+    clear();
+    const b = G.board.makeWord('BOX', 220, 150);
+    const before = G.board.count();
+    for (let i = 0; i < 4; i++) {
+      G.behaviors.putInBox(b, G.board.spawnLetter('A', 220 + (i - 2) * 26, 190));
+    }
+    if (withCat) {
+      const c = G.board.makeWord('CAT', 220, 100);
+      for (let i = 0; i < 30 * 60; i++) {
+        b.x = 220; b.y = 150; b.vx = b.vy = 0;
+        c.x = 220; c.y = 100; c.vx = c.vy = 0;
+        G.board.step(DT);
+      }
+    } else {
+      for (let i = 0; i < 30 * 60; i++) { b.x = 220; b.y = 150; G.board.step(DT); }
+      console.log('  넣은 글자 넉 장이 보드에서 빠졌는가  ' +
+        (G.board.count() === before ? '빠졌다 (자리 그대로)' : '남아 있다 (문제)'));
+    }
+    got.push(b.data.stored || 0);
+  }
+  console.log('  상자가 1분 동안 쌓은 값       넉 장에 ' + got[0].toFixed(0) +
+    'w · CAT 이 들어앉으면 ' + got[1].toFixed(0) + 'w' +
+    '  (제값 ' + (4 * C.BOX_PER_LETTER * 3) + 'w)');
+
+  /* 열쇠는 한 번 쓰면 부러진다 — 두 번째 상자는 열지 못한다 */
+  clear();
+  const b1 = G.board.makeWord('BOX', 150, 150);
+  G.behaviors.putInBox(b1, G.board.spawnLetter('A', 150, 190));
+  b1.data.stored = 120;
+  const k = G.board.makeWord('KEY', 150 + b1.w / 2 + 24, 150);
+  const money0 = G.state.money;
+  for (let i = 0; i < 30 * 6; i++) {
+    b1.x = 150; b1.y = 150; b1.vx = b1.vy = 0;
+    if (G.board.get(k.id)) { k.x = 150 + b1.w / 2 + 24; k.y = 150; k.vx = k.vy = 0; }
+    G.board.step(DT);
+  }
+  console.log('  KEY 로 상자를 열면            ' + Math.round(G.state.money - money0) +
+    'w 를 받고, 열쇠는 ' + (G.board.get(k.id) ? '그대로 있다 (문제)' : '부러졌다') +
+    ' · 남은 글자 ' + G.board.all().filter(e => e.type === 'letter').length + '개');
+}
+
+/* 물고기는 물이 없으면 한 푼도 벌지 못한다 */
+{
+  const paid = [];
+  for (const withWater of [false, true]) {
+    clear();
+    const f = G.board.makeWord('FISH', 220, 140);
+    let w = null;
+    if (withWater) w = G.board.makeWord('WATER', 220 + f.w / 2 + 26, 140);
+    for (let i = 0; i < 30 * 3; i++) {
+      f.x = 220; f.y = 140; f.vx = f.vy = 0;
+      if (w) { w.x = 220 + f.w / 2 + 26; w.y = 140; w.vx = w.vy = 0; }
+      G.board.step(DT);
+    }
+    paid.push(f.income());
+  }
+  console.log('  FISH 가 20초에 버는 값        물이 없으면 ' + paid[0].toFixed(0) +
+    'w · 물 곁이면 ' + paid[1].toFixed(0) + 'w');
+}
+
+/* 숯과 불 — 둘 다 세 배로 벌고, 숯은 15분이면 재가 된다 */
+{
+  clear();
+  const f = G.board.makeWord('FIRE', 220, 140);
+  const c = G.board.makeWord('COAL', 220 + f.w / 2 + 24, 140);
+  const hold = () => {
+    f.x = 220; f.y = 140; f.vx = f.vy = 0;
+    const cc = G.board.get(c.id);
+    if (cc) { cc.x = 220 + f.w / 2 + 24; cc.y = 140; cc.vx = cc.vy = 0; }
+  };
+  for (let i = 0; i < 30 * 3; i++) { hold(); G.board.step(DT); }
+  console.log('  숯을 물린 불의 벌이 배수      FIRE ×' + f.incomeMul.toFixed(1) +
+    ' · COAL ×' + c.incomeMul.toFixed(1));
+
+  /* 숯을 하나 더 붙여도 불이 아홉 배를 벌지는 않는다 */
+  const c2 = G.board.makeWord('COAL', 220, 140 - 46);
+  for (let i = 0; i < 30 * 2; i++) {
+    hold(); c2.x = 220; c2.y = 140 - 46; c2.vx = c2.vy = 0;
+    G.board.step(DT);
+  }
+  console.log('  숯을 둘 붙여도 불은          ×' + f.incomeMul.toFixed(1) +
+    ' (곱절로 겹치면 ×' + (C.COAL_PAIR * C.COAL_PAIR) + ')');
+  G.board.remove(c2);
+
+  let sec = 0;
+  for (let i = 0; i < 30 * 60 * 20; i++) {
+    hold(); G.board.step(DT);
+    if (!G.board.get(c.id)) { sec = i * DT; break; }
+  }
+  console.log('  숯이 불 곁에서 버틴 시간      ' +
+    (sec ? (sec / 60).toFixed(0) + '분 뒤 재가 되었다' : '20분이 지나도 그대로 (문제)'));
+}
+
+/* 같은 단어를 여럿 세워도 겹쳐 걸리지 않는다 */
+{
+  const rows = [];
+  for (const [word, read] of [['SUN', e => e.payMul], ['MOON', e => e.incomeMul]]) {
+    const got = [];
+    for (const n of [1, 3]) {
+      clear();
+      const t = G.board.makeWord('CRATE', 220, 140);
+      const put = [];
+      for (let i = 0; i < n; i++) put.push(G.board.makeWord(word, 220, 140 - 44 - i * 4));
+      for (let i = 0; i < 30 * 2; i++) {
+        t.x = 220; t.y = 140; t.vx = t.vy = 0;
+        put.forEach((p, k) => { p.x = 220; p.y = 140 - 44 - k * 4; p.vx = p.vy = 0; });
+        G.board.step(DT);
+      }
+      got.push(read(t).toFixed(2));
+    }
+    rows.push(word + ' 하나 ×' + got[0] + ' · 셋 ×' + got[1]);
+  }
+  console.log('  같은 단어를 겹쳐 세우면       ' + rows.join(' · '));
+
+  /* 겹치지 않는 것은 "같은 단어끼리" 다. 종류가 다르면 그대로 곱해져야 한다 —
+     숯을 물린 불(×3)에 달을 세우면 ×3.75 까지 가고, 상한(×4)에 걸리지 않는다 */
+  const read = () => {
+    clear();
+    const f = G.board.makeWord('FIRE', 220, 140);
+    const c = G.board.makeWord('COAL', 220 + f.w / 2 + 24, 140);
+    const m = G.board.makeWord('MOON', 220, 140 - 46);
+    for (let i = 0; i < 30 * 2; i++) {
+      f.x = 220; f.y = 140; f.vx = f.vy = 0;
+      c.x = 220 + f.w / 2 + 24; c.y = 140; c.vx = c.vy = 0;
+      m.x = 220; m.y = 140 - 46; m.vx = m.vy = 0;
+      G.board.step(DT);
+    }
+    return f;
+  };
+  const f = read();
+  console.log('  숯 물린 불에 달까지 세우면    ×' + f.incomeMul.toFixed(2) +
+    ' (숯 ×' + C.COAL_PAIR + ' × 달 ×' + C.MOON_INCOME + ' = ×' +
+    (C.COAL_PAIR * C.MOON_INCOME).toFixed(2) + ' · 상한 ×' + C.INCOME_CAP + ')');
+}
+
+/* 은행 — 떼어 두었다가 한 주기마다 이자를 얹어 돌려준다 */
+{
+  clear();
+  G.state.vault = 0; G.state.vaultT = 0;
+  G.board.makeWord('BANK', 220, 140);
+  G.state.money = 0;
+  G.board.earn(1000);
+  const kept = G.state.money, saved = G.state.vault;
+  G.state.vaultT = C.BANK_PERIOD - DT;
+  G.board.step(DT);
+  console.log('  1000w 가 들어오면            손에 ' + Math.round(kept) +
+    'w · 금고에 ' + Math.round(saved) + 'w → ' + Math.round(C.BANK_PERIOD / 60) + '분 뒤 ' +
+    Math.round(G.state.money - kept) + 'w');
+
+  G.state.vault = C.BANK_VAULT_MAX;
+  G.state.money = 0;
+  G.board.earn(1000);
+  console.log('  금고가 다 차면               떼지 않는다 · 손에 ' +
+    Math.round(G.state.money) + 'w');
+  G.state.vault = 0; G.state.vaultT = 0;
+}
+
+/* 정원이 찬 보드에서 단어를 분해하면 */
+{
+  clear();
+  const w = G.board.makeWord('CRATE', 220, 140);
+  while (G.board.count() < G.maxEntities()) G.board.spawnLetter('Q');
+  const before = G.board.count();
+  const ok = G.board.explode(w);
+  console.log('  가득 찬 보드에서 분해하면     ' + (ok ? '흩어진다 (문제)' : '막혀 있다') +
+    ' · ' + G.board.count() + '/' + G.maxEntities() + '개');
+  clear();
+  const w2 = G.board.makeWord('CRATE', 220, 140);
+  G.board.explode(w2);
+  console.log('  자리가 있으면                흩어진다 · 낱글자 ' +
+    G.board.all().filter(e => e.type === 'letter').length + '개');
+}
+
+/* 정원은 낱글자를 센다 — 뜻이 있는 단어가 되었을 때에만 자리가 돌아온다.
+   덩어리 하나를 한 칸으로 세면 아무 글자나 붙여 세우는 것이 곧 확장이 된다 */
+{
+  clear();
+  for (const ch of 'CRATE') G.board.spawnLetter(ch);
+  const loose = G.board.count();
+  clear();
+  G.board.add(new G.Entity('cluster', 'CRTE', 220, 140));   // 뜻 없는 덩어리
+  const lump = G.board.count();
+  clear();
+  G.board.makeWord('CRATE', 220, 140);                      // 뜻이 있는 단어
+  console.log('  다섯 글자가 먹는 자리         낱낱이 ' + loose + '칸 · 뜻 없이 붙이면 ' +
+    lump + '칸 · 단어가 되면 ' + G.board.count() + '칸');
+}
+
+/* 다 탄 단어는 글자까지 사라진다 */
+{
+  clear();
+  const t = G.board.makeWord('TREE', 220, 140);
+  t.ignite();
+  for (let i = 0; i < 30 * (C.BURN_COLLAPSE + 4); i++) G.board.step(DT);
+  console.log('  다 타고 나면                 남은 것 ' + G.board.count() +
+    '개 (글자로 흩어지면 4개)');
+}
+
+/* 강화 — 확률과 배수가 적힌 대로 도는가 */
+{
+  clear();
+  const pad = G.board.makeWord('FORGE', 220, 60);
+  const runs = 400;
+  const line = [];
+  for (let lv = 0; lv < C.UP_ODDS.length; lv++) {
+    let ok = 0;
+    for (let i = 0; i < runs; i++) {
+      const w = G.board.makeWord('CRATE', 220, 150);
+      w.data.up = lv;
+      if (G.behaviors.runUpgrade(pad, w)) ok++;
+      if (G.board.get(w.id)) G.board.remove(w);
+    }
+    line.push((lv + 1) + '강 ' + Math.round(ok / runs * 100) + '%' +
+      '(적힌 값 ' + Math.round(C.UP_ODDS[lv] * 100) + '%)');
+  }
+  console.log('  강화 성공률 400번씩            ' + line.join(' · '));
+
+  clear();
+  const w2 = G.board.makeWord('CRATE', 220, 150);
+  const base = w2.income();
+  const muls = [];
+  for (let lv = 0; lv < C.UP_MUL.length; lv++) {
+    w2.data.up = lv + 1;
+    muls.push((lv + 1) + '강 ' + w2.income().toFixed(0) + 'w');
+  }
+  console.log('  CRATE 20초 벌이               그냥 ' + base.toFixed(0) + 'w · ' +
+    muls.join(' · '));
+  console.log('  능력 단어에 걸 수 있는가       ' +
+    (G.behaviors.upgradable(G.board.makeWord('FIRE', 300, 200)) ? '걸린다 (문제)' : '막혀 있다'));
+}
+
+/* 정원이 찬 보드에서 낱글자를 팔면 그 자리가 바로 도로 채워지지는 않는가 */
+{
+  clear();
+  G.state.spawnLevel = 0;
+  while (G.board.count() < G.maxEntities()) G.board.spawnLetter('Q');
+  G.state.spawnTimer = 0;
+  G.game.stepSpawn(DT);                       // 정원이 차 있으니 게이지는 멈춰 있다
+  const before = G.board.count();
+  G.board.remove(G.board.all()[0]);
+  G.game.soldOne();
+  G.game.stepSpawn(DT);
+  console.log('  가득 찬 보드에서 하나를 팔면   ' +
+    (G.board.count() < before ? '자리가 남는다 (다음 글자까지 ' +
+      G.state.spawnTimer.toFixed(0) + '초)' : '그 프레임에 도로 찬다 (문제)'));
+  G.state.spawnTimer = 0;
+}
+
+/* 생쥐가 떨어진 힌트권을 대신 주워 온다 */
+{
+  for (const withMouse of [false, true]) {
+    clear();
+    G.state.tickets = 0;
+    G.tokens.spawnTicket(120, 140);
+    if (withMouse) G.board.makeWord('MOUSE', 380, 240);
+    for (let i = 0; i < 30 * 12; i++) G.board.step(DT);
+    console.log('  떨어진 힌트권을 12초 두면    ' +
+      (withMouse ? 'MOUSE 가 있을 때 ' : '아무도 없을 때 ') +
+      (G.state.tickets || 0) + '장 손에 들어왔다');
+  }
+}
+
+/* 자석은 쥐고 있을 때만, 그것도 모음만 끌어온다 */
+{
+  const pulled = [];
+  for (const held of [false, true]) {
+    clear();
+    const m = G.board.makeWord('MAGNET', 220, 140);
+    m.dragging = held;
+    const a = G.board.spawnLetter('A', 220, 200);
+    const k = G.board.spawnLetter('K', 220, 80);
+    const D = G.util.dist;
+    const d0 = [D(m.x, m.y, a.x, a.y), D(m.x, m.y, k.x, k.y)];
+    for (let i = 0; i < 30 * 6; i++) {
+      m.x = 220; m.y = 140; m.vx = m.vy = 0;
+      G.board.step(DT);
+    }
+    pulled.push([d0[0] - D(m.x, m.y, a.x, a.y), d0[1] - D(m.x, m.y, k.x, k.y)]);
+  }
+  console.log('  자석이 6초 동안 당겨 온 거리   내려놓으면 모음 ' +
+    pulled[0][0].toFixed(0) + 'px · 자음 ' + pulled[0][1].toFixed(0) + 'px');
+  console.log('                               쥐고 있으면 모음 ' +
+    pulled[1][0].toFixed(0) + 'px · 자음 ' + pulled[1][1].toFixed(0) + 'px');
+}
+
+/* 망치는 보석값을 다시 매긴다 — 그리고 한 보석에 한 번뿐이다 */
+{
+  clear();
+  const hm = G.board.makeWord('HAMMER', 220, 140);
+  const g = G.board.makeWord('GOLD', 220, 190);
+  const was = g.income();
+  const hold = (secs) => {
+    for (let i = 0; i < 30 * secs; i++) {
+      hm.x = 220; hm.y = 140; hm.vx = hm.vy = 0;
+      g.x = 220; g.y = 190; g.vx = g.vy = 0;
+      G.board.step(DT);
+    }
+  };
+  hold(4);
+  const first = g.data.worth;
+  hold(20);
+  console.log('  HAMMER 곁에 GOLD 를 두면       값 ×' + first.toFixed(2) +
+    ' · 벌이 ' + was + 'w → ' + g.income().toFixed(1) + 'w' +
+    ' · 20초 더 두어도 ×' + g.data.worth.toFixed(2) + ' (한 번뿐)');
+  console.log('  그 보석을 SHOP 에 넘기면       ' +
+    Math.round(C.GEM_PRICE * g.text.length) + 'w → ' +
+    Math.round(C.GEM_PRICE * g.text.length * g.data.worth) + 'w');
+}
+
+/* 시간과 시계는 다음 글자를 앞당긴다 */
+{
+  clear();
+  const base = G.game.spawnInterval();
+  G.game.sellTime();
+  const sold = G.game.spawnInterval();
+  const ck = G.board.makeWord('CLOCK', 220, 140);
+  const withClock = G.game.spawnInterval();
+  G.board.remove(ck);
+  const off = G.game.spawnInterval();
+  G.state.timeCut = 0;
+  console.log('\n  생성 간격  기본 ' + base + '초 · TIME 을 하나 팔면 ' + sold.toFixed(1) +
+    '초 · CLOCK 을 세우면 ' + withClock.toFixed(1) + '초 · 시계를 치우면 ' + off.toFixed(1) + '초');
+  console.log('  아무리 줄여도 바닥은 ' + C.SPAWN_FLOOR + '초');
+}
+
+/* 집은 자리를 늘린다 — 타서 무너지면 늘어난 자리도 사라진다 */
+{
+  clear();
+  const room0 = G.maxEntities();
+  const h = G.board.makeWord('HOUSE', 220, 140);
+  const room1 = G.maxEntities();
+  h.ignite();
+  const room2 = G.maxEntities();
+  console.log('  보드 정원  집이 없으면 ' + room0 + '개 · 한 채 지으면 ' + room1 +
+    '개 · 그 집에 불이 붙으면 ' + room2 + '개');
+}
+
+/* 유령은 보고 있을 때는 아무 일도 하지 않는다 */
+{
+  clear();
+  const w = G.board.makeWord('MEAT', 220, 140);
+  G.board.makeWord('GHOST', 220, 140);
+  for (let i = 0; i < 30 * 5; i++) G.board.step(DT);
+  console.log('  GHOST 를 겹쳐 세워도 벌이 배수 ×' + w.incomeMul.toFixed(2) +
+    ' (자리를 비운 동안의 몫 ' + Math.round(C.OFFLINE_RATE * 100) + '% → ' +
+    Math.round((C.OFFLINE_RATE + C.GHOST_OFFLINE) * 100) + '%)');
+}
+
+/* 숯을 문 불은 더 빨리 옮아붙는다 */
+{
+  const took = [];
+  for (const withCoal of [false, true]) {
+    clear();
+    const t = G.board.makeWord('TREE', 220, 140);
+    const f = G.board.makeWord('FIRE', 220 + t.w / 2 + 24, 140);
+    if (withCoal) G.board.makeWord('COAL', f.x, 140 - 44);
+    let sec = 0;
+    for (let i = 0; i < 30 * 90; i++) {
+      t.x = 220; t.y = 140; t.vx = t.vy = 0;
+      f.x = 220 + t.w / 2 + 24; f.y = 140; f.vx = f.vy = 0;
+      G.board.step(DT);
+      if (t.burning) { sec = i * DT; break; }
+    }
+    took.push(sec ? sec.toFixed(0) + '초' : '90초 넘게');
+  }
+  console.log('  TREE 에 불이 옮아붙기까지     그냥 ' + took[0] +
+    ' · COAL 을 물린 불이면 ' + took[1]);
+}
+
+/* 물이 불을 끈다 — 이제 이 일을 하는 단어는 하나뿐이다 */
 {
   clear();
   const t = G.board.makeWord('TREE', 400, 300); t.ignite();
-  const s = G.board.makeWord('SAND', 400 + t.w / 2 + 26, 300);
+  const w = G.board.makeWord('WATER', 400 + t.w / 2 + 26, 300);
   let out = 0;
   for (let i = 0; i < 30 * 20; i++) {
-    t.x = 400; t.y = 300; s.x = 400 + t.w / 2 + 26; s.y = 300;
+    t.x = 400; t.y = 300; w.x = 400 + t.w / 2 + 26; w.y = 300;
     G.board.step(DT);
-    if (!t.burning && !out) { out = i * DT; break; }
+    if (!t.burning) { out = i * DT; break; }
   }
-  console.log('  SAND 가 타는 TREE 를 덮어      ' +
+  console.log('  WATER 가 타는 TREE 를        ' +
     (out ? out.toFixed(0) + '초 만에 껐다' : '20초 동안 못 껐다'));
-}
 
-/* 얼음은 불 곁에서 녹았다가 열을 치우면 도로 언다 */
-{
-  clear();
-  const ice = G.board.makeWord('ICE', 400, 300);
-  const f = G.board.makeWord('FIRE', 400 + ice.w / 2 + 26, 300);
-  for (let i = 0; i < 30 * 25; i++) { ice.x = 400; ice.y = 300; f.x = 400 + ice.w / 2 + 26; f.y = 300; G.board.step(DT); }
-  const melted = ice.data.melt;
-  G.board.remove(f);
-  for (let i = 0; i < 30 * 40; i++) { ice.x = 400; ice.y = 300; G.board.step(DT); }
-  console.log('  ICE 는 불 곁에서 녹고           녹은 정도 ' + melted.toFixed(2) +
-    ' → 열을 치우니 ' + ice.data.melt.toFixed(2) + ' (여전히 ' + ice.text + ')');
-}
-
-/* 강 한가운데 바위를 놓으면 낱글자가 그 뒤에 걸린다 */
-{
-  G.state.expandLevel = 6; G.board.layout();          // 넉넉한 판에서 흘려 보낸다
-  const kept = [];
-  for (const withRock of [false, true]) {
-    let stay = 0, total = 0;
-    for (let trial = 0; trial < 12; trial++) {
-      clear();
-      const cx = G.board.size().w / 2, cy = G.board.size().h / 2;
-      const r = G.board.makeWord('RIVER', cx, cy);
-      const rx = cx + 60;
-      if (withRock) G.board.makeWord('ROCK', rx, cy);
-      const L = new G.Entity('letter', 'Q', rx + 26, cy);
-      G.board.add(L);
-      for (let i = 0; i < 30 * 40; i++) { r.x = cx; r.y = cy; r.vx = r.vy = 0; G.board.step(DT); }
-      total++;
-      if (Math.hypot(L.x - rx, L.y - cy) < 70) stay++;
+  /* 불을 끄는 단어가 정말 WATER 하나뿐인가 */
+  const putters = [];
+  for (const id of G.WORDS.map(w2 => w2.id)) {
+    clear();
+    const tt = G.board.makeWord('TREE', 400, 300); tt.ignite();
+    const o = G.board.makeWord(id, 400 + tt.w / 2 + 26, 300);
+    for (let i = 0; i < 30 * 20; i++) {
+      tt.x = 400; tt.y = 300; o.x = 400 + tt.w / 2 + 26; o.y = 300;
+      G.board.step(DT);
     }
-    kept.push(stay + '/' + total);
+    if (!tt.burning && G.board.get(tt.id)) putters.push(id);
   }
-  G.state.expandLevel = 0; G.board.layout();
-  console.log('  RIVER 에 띄운 낱글자가 40초 뒤 그 자리에 남아 있던 비율');
-  console.log('      바위 없이 ' + kept[0] + ' · 바위를 놓으면 ' + kept[1]);
+  console.log('  20초 안에 불을 끄는 단어      ' + (putters.join(' ') || '없음'));
 }
 
-/* 물은 불 곁에서 끓어 주변을 재촉하고, 김은 데워 주지 않으면 식는다 */
-{
-  clear();
-  const w = G.board.makeWord('WATER', 400, 300);
-  const f = G.board.makeWord('FIRE', 400 + w.w / 2 + 22, 300);
-  const c = G.board.makeWord('CLOCK', 400 - w.w / 2 - 30, 300);
-  for (let i = 0; i < 30 * 3; i++) { w.x = 400; w.y = 300; f.x = 400 + w.w / 2 + 22; f.y = 300; c.x = 400 - w.w / 2 - 30; c.y = 300; G.board.step(DT); }
-  console.log('  WATER 가 불 곁에서 끓는가        ' + (w.data.boil ? '끓는다' : '아니다') +
-    ' · 곁의 CLOCK 재촉 ×' + c.speedMul.toFixed(2));
-
-  clear();
-  const st = G.board.makeWord('STEAM', 400, 300);
-  for (let i = 0; i < 30 * 60; i++) { st.x = 400; st.y = 300; G.board.step(DT); }
-  const cold = st.data.hot;
-  const f2 = G.board.makeWord('FIRE', 400 + st.w / 2 + 26, 300);
-  for (let i = 0; i < 30 * 15; i++) { st.x = 400; st.y = 300; f2.x = 400 + st.w / 2 + 26; f2.y = 300; G.board.step(DT); }
-  console.log('  STEAM 은 1분 두면 김이 ' + cold.toFixed(2) +
-    ' 까지 식고, 다시 데우면 ' + st.data.hot.toFixed(2) + ' (여전히 ' + st.text + ')');
+/* 2.65 ─ 짝을 지으면 그 자리를 지키는가 --------------------------------
+   붙여 놓아도 저 혼자 통통 뛰어 달아나면 짝을 지은 보람이 없다.
+   90초를 그냥 굴려 놓고, 처음 붙여 둔 자리에서 얼마나 밀려났는지 잰다.
+   (짝 없이 혼자 둔 것과 견주어야 "원래 안 움직이는 단어" 와 구별된다) */
+console.log('\n\n짝을 붙여 놓으면 그 자리를 지키는가 (90초)\n');
+console.log('  짝               혼자 둘 때   짝과 있을 때');
+for (const [a, b] of [['BEE', 'TREE'], ['MEAT', 'FIRE'], ['FISH', 'WATER'],
+['KEY', 'BOX'], ['GOLD', 'SHOP'], ['CAT', 'BOX'], ['WATER', 'SEED'],
+['FIRE', 'COAL'], ['COAL', 'FIRE']]) {
+  const drift = (mate) => {
+    clear();
+    const e = G.board.makeWord(a, 200, 140);
+    if (mate) G.board.makeWord(mate, 200 + e.w / 2 + 30, 140);
+    const x0 = e.x, y0 = e.y;
+    for (let i = 0; i < 30 * 90; i++) G.board.step(DT);
+    const live = G.board.get(e.id);
+    return live ? G.util.dist(x0, y0, live.x, live.y) : -1;
+  };
+  const alone = drift(null), paired = drift(b);
+  /* 없어진 것은 달아난 것이 아니라 제 일을 마친 것이다 —
+     고기는 다 익고 나서 탔고, 금덩이는 가게에 팔렸다 */
+  const say = (v) => v < 0 ? '제 일을 마쳤다' : (v < 6 ? '가만히' : Math.round(v) + 'px 이동');
+  console.log('  ' + (a + ' + ' + b).padEnd(17) + say(alone).padEnd(13) + say(paired));
 }
 
-/* 둥지에 든 새는 알 대신 글자를 떨군다 */
+/* 2.66 ─ 벽은 정말 막는가 ----------------------------------------------
+   위아래로 이어 붙여 보드를 반으로 자르는 담을 세우고, 한쪽에 둔 BIRD 가
+   5분 동안 한 번이라도 반대쪽에 있었는지 본다 */
 {
-  clear();
-  const b = G.board.makeWord('BIRD', 400, 300);
-  const n = G.board.makeWord('NEST', 400 + b.w / 2 + 22, 300);
-  for (let i = 0; i < 30 * 120; i++) { b.x = 400; b.y = 300; n.x = 400 + b.w / 2 + 22; n.y = 300; G.board.step(DT); }
-  const eggs = G.board.all().filter(e => e.text === 'EGG').length;
-  const letters = G.board.all().filter(e => e.type === 'letter').length;
-  console.log('  BIRD + NEST 2분              EGG ' + eggs + '개 · 낱글자 ' + letters + '개');
+  const b = G.board.size(), mid = b.w / 2;
+  const run = (fence) => {
+    clear();
+    if (fence) {
+      const probe = G.board.makeWord('WALL', mid, 20), h = probe.h;
+      G.board.remove(probe);
+      for (let y = h / 2; y < b.h + h; y += h - 2) G.board.makeWord('WALL', mid, y);
+    }
+    const bird = G.board.makeWord('BIRD', mid - 90, b.h / 2);
+    let over = 0;
+    for (let i = 0; i < 30 * 300; i++) { G.board.step(DT); if (bird.x > mid) over++; }
+    return over;
+  };
+  console.log('\n\n벽으로 보드를 반으로 자르고 BIRD 를 5분 굴리면\n');
+  console.log('  담을 세우면   반대쪽에 있던 프레임 ' + run(true) + ' (0 이어야 벽이다)');
+  console.log('  담이 없으면   반대쪽에 있던 프레임 ' + run(false));
 }
 
 /* 2.7 ─ 톱니바퀴는 몇 개까지 물리는가 ---------------------------------- */
@@ -201,7 +635,7 @@ console.log('\n\n톱니바퀴\n');
 
   /* 물린 수에 따라 벌이가 어떻게 오르는가 */
   console.log('\n  물린 수   그 톱니 벌이   톱니 한 벌(가운데+둘레) 20초 수입');
-  for (const n of [0, 1, 2, 3, 4]) {
+  for (const n of [0, 1, 2, 3]) {
     clear();
     const c = G.board.makeWord('GEAR', cx, cy);
     const put = [[62, 0], [-62, 0], [0, 44], [0, -44]].slice(0, n);
@@ -309,7 +743,7 @@ console.log('\n\n힌트권\n');
   const up = C.SPAWN_COSTS.concat(C.EXPAND_COSTS).reduce((a, b) => a + b, 0);
   console.log('  한 단어를 끝까지 (' + C.HINT_TICKETS.join('+') + '=' + per + '장) ' +
     first.toLocaleString() + 'w');
-  console.log('  51개를 전부 힌트로만        ' + all.toLocaleString() + 'w' +
+  console.log('  ' + G.WORDS.length + '개를 전부 힌트로만        ' + all.toLocaleString() + 'w' +
     '  (업그레이드 전부 ' + up.toLocaleString() + 'w)');
 
   console.log('\n  3단계에서 드러나는 철자');
@@ -320,7 +754,7 @@ console.log('\n\n힌트권\n');
 /* 3.7 ─ 능력 단어가 보통 단어보다 얼마나 더 버는가 ---------------------- */
 console.log('\n\n능력 단어의 벌이 (보통 단어 = 1.0)\n');
 
-/* 51개를 한 판에 다 깔고 2분 굴린 뒤, 같은 길이의 보통 단어와 견준다 */
+/* 능력 단어를 한 판에 다 깔고 2분 굴린 뒤, 같은 길이의 보통 단어와 견준다 */
 function boardMul() {
   G.state.expandLevel = C.EXPAND_SCALE.length - 1;    // 다 키운 보드에서 잰다
   G.board.layout();
@@ -372,46 +806,63 @@ function stack(target, mates) {
     }
     G.board.step(DT);
   }
-  return G.board.get(t.id) ? t.incomeMul : 0;
+  return G.board.get(t.id) ? [t.incomeMul, t.gearMul] : [0, 1];
 }
-console.log('    (상한 ×' + C.INCOME_CAP + ' — 실제로 들어오는 돈은 여기서 잘린다)');
+console.log('    (상한 ×' + C.INCOME_CAP + ' — 톱니 배수만 이 상한 밖에서 곱해진다)');
 for (const [name, target, mates] of [
-  ['보석 하나에 빛을 모아', 'DIAMOND', ['SUN', 'MOON', 'GLASS', 'LAMP', 'GHOST']],
-  ['익힌 고기에 다 붙이기', 'MEAT', ['FIRE', 'COAL', 'SUN', 'MOON', 'GLASS', 'LAMP', 'GHOST']],
-  ['금덩이 진열', 'GOLD', ['BANK', 'SUN', 'MOON', 'GLASS', 'LAMP', 'GHOST']]
+  ['보석 하나에 다 붙이기', 'DIAMOND', ['MOON', 'LUCK']],
+  ['익힌 고기에 다 붙이기', 'MEAT', ['FIRE', 'COAL', 'MOON', 'LUCK']],
+  ['금덩이에 다 붙이기', 'GOLD', ['MOON', 'LUCK', 'SUN']]
 ]) {
-  const raw = stack(target, mates);
-  console.log('    ' + name.padEnd(22) + '쌓인 배수 ×' + raw.toFixed(1) +
-    '  →  실제 ×' + Math.min(raw, C.INCOME_CAP).toFixed(1));
+  const [raw, gear] = stack(target, mates);
+  console.log('    ' + name.padEnd(22) + '쌓인 배수 ×' + (raw * gear).toFixed(1) +
+    '  →  실제 ×' + (Math.min(raw, C.INCOME_CAP) * gear).toFixed(1));
 }
 
-/* 사건 보상이 20초 수입의 몇 배씩 터지는가 — 실제 코드에서 읽어 온다 */
-console.log('\n  한 번씩 터지는 사건이 20초 수입의 몇 배인가');
-const bsrc = fs.readFileSync('js/behaviors.js', 'utf8');
-const rw = [...bsrc.matchAll(/reward\(([\d.]+),\s*(\d+)\)/g)].map(m => [+m[1], +m[2]]);
-rw.sort((a, b) => b[0] - a[0]);
-console.log('    가장 큰 것 ×' + rw[0][0] + ' + ' + rw[0][1] + 'w · ' +
-  '가장 작은 것 ×' + rw[rw.length - 1][0] + ' + ' + rw[rw.length - 1][1] + 'w · ' +
-  '모두 ' + rw.length + '건, 평균 ×' + (rw.reduce((s, r) => s + r[0], 0) / rw.length).toFixed(2));
+/* 사건으로 들어오는 돈.
+   기준은 "지금까지 번 돈" 이 아니라 지금 이 보드의 20초 수입(payRate)이다.
+   가끔 터지는 것이라 눈에 잘 안 띄는데, 확률을 곱해 20초치로 펴 놓고 보면
+   보통 단어 몇 개 몫인지가 드러난다 — 여기가 부풀면 보드가 사건판이 된다 */
+console.log('\n  사건으로 들어오는 돈 (확률을 곱해 20초치로 편 값)');
+console.log('    단어    한 번에            20초에 평균   보통 4글자(8w) 대비');
+for (const [id, mul, flat, share] of [
+  ['BEE', C.EVENT_CUT, C.EVENT_FLAT, 1],
+  ['DOG', C.EVENT_CUT, C.EVENT_FLAT, 1 - C.DOG_LETTER],
+  ['SHOP', C.COIN_VALUE, C.COIN_FLAT, 1]
+]) {
+  const p = G.WORDS.find(w => w.id === id).actChance;
+  for (const [when, rate] of [['작은 보드', 40], ['다 키운 보드', 460]]) {
+    const one = mul * rate + flat, per = p * share * one;
+    console.log('    ' + (when === '작은 보드' ? id : '').padEnd(8) +
+      when.padEnd(8) + Math.round(one) + 'w'.padEnd(6) +
+      String(Math.round(per) + 'w').padStart(10) + '   ×' + (per / 8).toFixed(1));
+  }
+}
 
-/* 4 ─ 가게가 흘리는 잔돈이 얼마나 되는가 -------------------------------- */
-console.log('\n\n가게 특가 동전 (26~40초에 한 번)\n');
-console.log('  가게 수   보드 20초 수입   동전 한 개   분당 잔돈   수입 대비');
-for (const n of [1, 3, 10, 25]) {
+/* 4 ─ 가게에 보석을 파는 값이 적당한가 ---------------------------------- */
+console.log('\n\n가게에 보석 팔기\n');
+console.log('  보석       파는 값        보드 20초 수입 대비');
+for (const id of ['GOLD', 'RUBY', 'DIAMOND', 'EMERALD']) {
   clear();
-  for (let i = 0; i < n; i++) G.board.makeWord('SHOP', 60 + (i % 10) * 95, 60 + Math.floor(i / 10) * 95);
-  /* 벌이가 큰 보드를 흉내내려고 값나가는 단어를 곁들인다 */
-  for (let i = 0; i < 12; i++) G.board.makeWord('DIAMOND', 60 + (i % 10) * 95, 420 + Math.floor(i / 10) * 95);
+  const s = G.board.makeWord('SHOP', 400, 300);
+  const g = G.board.makeWord(id, 400 + s.w / 2 + 30, 300);
+  /* 벌이가 어느 정도 오른 보드를 흉내낸다 */
+  for (let i = 0; i < 12; i++) G.board.makeWord('TREE', 60 + (i % 10) * 95, 520);
   G.board.step(DT);
   const rate = G.board.payRate();
-  /* 동전 값은 behaviors.js 의 shop 이 쓰는 식을 그대로 읽어 온다 */
-  const sm = bsrc.match(/reward\(([\d.]+),\s*(\d+)\)\s*\*\s*U\.rand/);
-  const coin = Math.max(1, (+sm[2] + rate * +sm[1]) / n);
-  const perMin = coin * (60 / 33) * n;
-  const income = rate * 3;
-  console.log(`  ${String(n).padStart(7)}   ${(rate.toFixed(0) + 'w').padStart(12)}   ${(coin.toFixed(0) + 'w').padStart(9)}   ${(perMin.toFixed(0) + 'w').padStart(9)}   ${(100 * perMin / income).toFixed(0).padStart(6)}%`);
+  const before = G.state.money;
+  for (let i = 0; i < 30 * 12; i++) {
+    s.x = 400; s.y = 300; s.vx = s.vy = 0;
+    if (G.board.get(g.id)) { g.x = 400 + s.w / 2 + 30; g.y = 300; g.vx = g.vy = 0; }
+    G.board.step(DT);
+  }
+  const got = G.state.money - before;
+  console.log('  ' + id.padEnd(10) + (got.toFixed(0) + 'w').padStart(9) +
+    (rate > 0 ? ('   20초 수입의 ' + (got / rate).toFixed(1) + '배') : ''));
 }
-console.log('  (동전은 손으로 주워야 들어온다. 가게를 늘려도 총액은 그대로여야 정상)');
+console.log('  (목돈은 보석을 갖다 놓아야만 나온다. 가게가 흘리는 잔돈은 20초마다 ' +
+  Math.round(G.defFor('SHOP').actChance * 100) + '% 로, 한 닢이 20초 수입의 ' +
+  C.COIN_VALUE + '배뿐이고 주워야 들어온다)');
 
 /* 5 ─ 능력 단어를 전부 깔고 5분 돌려 본다 (터지는 곳이 없는지) */
 G.state.expandLevel = C.EXPAND_SCALE.length - 1;

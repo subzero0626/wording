@@ -119,7 +119,22 @@ G.defs = (function () {
     WEE: '아주 작은', WOK: '중화 냄비', YAW: '항로를 벗어나다', YEA: '찬성',
     YEW: '주목나무', ZIG: '지그재그로 꺾다',
     /* 복수형인데 자료가 엉뚱한 항목을 물고 있는 것들 */
-    ALES: '에일 맥주들', DOES: '암사슴들', ERRS: '잘못하다', TEES: '티들'
+    ALES: '에일 맥주들', DOES: '암사슴들', ERRS: '잘못하다', TEES: '티들',
+    /* 흔한 형용사인데 자료가 엉뚱한 것을 물고 있는 것들.
+       BIG 이 "장대", NICE 가 "니스", WISE 가 "철" 로 나오던 자리다.
+       원형이 제대로 잡혀야 BIGGER · WISEST 도 "더 큰 · 가장 슬기로운" 으로 읽힌다 */
+    BIG: '크다, 커다란', WIDE: '넓다, 너른', NICE: '좋다, 훌륭한',
+    WISE: '슬기롭다, 현명한', FINE: '훌륭하다, 섬세한', BLUE: '파랗다, 우울한',
+    FEW: '적다, 몇 안 되는', NEW: '새롭다', FREE: '자유롭다, 공짜의',
+    RUDE: '무례하다', SURE: '틀림없다, 확실한', VILE: '비열하다',
+    NUDE: '벌거벗다', DARK: '어둡다, 캄캄한', RAW: '날것이다, 설익다',
+    /* 원형과 뜻이 어긋나 있어 되짚기가 닿지 않는 것 (FINER 에 FIN 의 뜻이 들어 있다) */
+    FINER: '더 훌륭한',
+    /* 철자가 원형과 아예 다른 비교급·최상급. 철자로는 되짚을 수 없다 */
+    BETTER: '더 좋은, 더 나은', WORSE: '더 나쁜', WORST: '가장 나쁜',
+    MORE: '더 많은', MOST: '가장 많은', LESS: '더 적은', LEAST: '가장 적은',
+    ELDER: '손위의', ELDEST: '맏이의', FURTHER: '더 먼', FARTHER: '더 먼',
+    FURTHEST: '가장 먼', FARTHEST: '가장 먼'
   };
 
   /* 표제어에 딸려 있던 조사가 앞에 남은 것 — "와 결혼하다" 의 "와 " */
@@ -194,19 +209,70 @@ G.defs = (function () {
     return s;
   }
 
+  /* ------------------------------------------------------------------
+     비교급 · 최상급
+
+     BIGGER 를 눌러도 BIG 과 똑같은 뜻이 떴다. 자료가 변화형마다 원형의 뜻을
+     그대로 복사해 두었기 때문인데, 그래서 "더" 인지 "가장" 인지가 어디에도
+     드러나지 않았다. 원형 칸도 절반은 비어 있어(BIGGEST 에는 BIG 이 적혀
+     있지만 BIGGER 에는 없다) 그것만 믿을 수도 없다.
+
+     그래서 철자로 되짚는다 — BIGGER → BIGG → BIG. 되짚은 자리에 실제로 단어가
+     있고, 그 뜻이 이 단어의 뜻과 글자 그대로 같을 때에만 비교급으로 본다.
+     뜻을 복사해 왔다는 것이 곧 변화형이라는 표시이기 때문이다.
+
+     이 "뜻이 같은가" 하나가 남의 말을 거의 다 걸러 준다.
+     SOBER 는 SOB 의, TENDER 는 TEND 의, PROPER 는 PROP 의 비교급이 아닌데,
+     그것들은 저마다 제 뜻을 갖고 있어 원형의 뜻과 같지 않다.
+     품사 칸으로 거르지 않는 것은 자료가 OLD·SAFE·COLD 를 죄다 명사로
+     적어 두어서다 — 그것을 믿었다가는 멀쩡한 비교급의 절반을 놓친다.
+     ------------------------------------------------------------------ */
+
+  /** ER/EST 를 뗀 뒤 원형이 되었을 법한 철자들 */
+  function degStems(s) {
+    var out = [s];
+    if (/(.)\1$/.test(s)) out.push(s.slice(0, -1));      // BIGG → BIG
+    if (/I$/.test(s)) out.push(s.slice(0, -1) + 'Y');    // EASI → EASY
+    out.push(s + 'E');                                    // WID  → WIDE
+    return out;
+  }
+
+  /**
+   * 이 단어가 형용사의 비교급·최상급인지 본다.
+   * @return null 이거나 { sup: 최상급인가, root: 원형의 뜻풀이 }
+   */
+  function degree(info) {
+    if (info.pos !== 'a' && info.pos !== 'r') return null;
+    var m = /^(.{3,})(EST|ER)$/.exec(info.word);
+    if (!m) return null;
+    var stems = degStems(m[1]);
+    for (var i = 0; i < stems.length; i++) {
+      if (stems[i] === info.word) continue;
+      var r = peek(stems[i]);
+      if (!r) continue;
+      var same = info.base === r.word || (!!r.ko && info.ko === r.ko);
+      if (same) return { sup: m[2] === 'EST', root: r };
+    }
+    return null;
+  }
+
   /**
    * 후보 목록에서 보여줄 둘을 고른다.
    * @param raw  콤마로 이어진 후보들
    * @param pos  품사 (어느 것을 앞세울지)
    * @param word 화면에 뜰 단어 (변화형이면 모양을 맞춘다)
    * @param base 원형. 비어 있으면 변화형이 아니다
+   * @param deg  비교급·최상급이면 true — 앞에 "더 · 가장" 을 붙일 수 있는
+   *             후보(형용사·동사꼴)만 남긴다. "더 장대" 같은 말은 안 나오게
    */
-  function pick(raw, pos, word, base) {
+  function pick(raw, pos, word, base, deg) {
     if (!raw) return '';
     var parts = raw.split(','), keep = [], i, s;
     for (i = 0; i < parts.length; i++) {
       s = trim(parts[i]);
-      if (usable(s) && keep.indexOf(s) < 0) keep.push(s);
+      if (!usable(s) || keep.indexOf(s) >= 0) continue;
+      if (deg && !fit(s, 'a')) continue;
+      keep.push(s);
     }
     if (!keep.length) return '';
 
@@ -216,7 +282,7 @@ G.defs = (function () {
        단어까지 과거형으로 읽어 버리면 안 되기 때문이다.
        변화형은 하나만 보여 준다 — 활용이 어울리는 것은 대개 맨 앞 하나뿐이라
        둘씩 늘어놓으면 ACTED 가 "출연한, 조" 처럼 엉킨다. */
-    var out = [], limit = base ? 1 : 2;
+    var out = [], limit = (base || deg) ? 1 : 2;
     for (i = 0; i < keep.length && out.length < limit; i++) {
       var t = base ? inflect(keep[i], word, base) : keep[i];
       if (out.indexOf(t) < 0) out.push(t);
@@ -229,6 +295,17 @@ G.defs = (function () {
     if (!info) return '';
     /* 손으로 적어 둔 것은 이미 제 모양이라 활용하지 않는다 */
     if (KO_FIX[info.word]) return pick(KO_FIX[info.word], info.pos, info.word, '');
+
+    /* 비교급·최상급은 제 뜻에서든 원형에서든 형용사 하나만 골라 "더 · 가장" 을
+       앞에 붙인다. 붙일 만한 후보가 없으면(뜻이 죄다 명사면) 그냥 넘어간다 */
+    var d = degree(info);
+    if (d) {
+      /* 손으로 적어 둔 원형이 있으면 그쪽을 먼저 쓴다 — 자료보다 낫다 */
+      var one = pick(KO_FIX[d.root.word], 'a', info.word, '', true) ||
+        pick(info.ko, 'a', info.word, '', true) ||
+        pick(d.root.ko, 'a', info.word, '', true);
+      if (one) return (d.sup ? '가장 ' : '더 ') + one;
+    }
 
     var out = pick(info.ko, info.pos, info.word, info.base);
     if (out) return out;

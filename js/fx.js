@@ -116,13 +116,6 @@ G.fx = (function () {
         r: U.rand(1, 1.8), life: .8, c: '240,200,90', a: .75, drag: .93
       });
     },
-    rain: function (e, s) {                     // RAIN
-      if (Math.random() > 0.20 * s) return;
-      spark(e.x + U.rand(-e.w * .55, e.w * .55), e.y + U.rand(-2, 4), {
-        vx: U.rand(-3, 1), vy: U.rand(28, 44), g: 40,
-        r: U.rand(.8, 1.4), life: .5, c: '110,150,200', a: .6, shape: 'line', drag: 1
-      });
-    },
     swirl: function (e, s) {                    // WIND
       if (Math.random() > 0.05 * s) return;
       var a = U.rand(0, Math.PI * 2);
@@ -139,10 +132,6 @@ G.fx = (function () {
         c: '150,150,180', a: .35, drag: .96
       });
     },
-    tickmark: function (e, s) {                 // CLOCK
-      if (Math.random() > 0.02 * s) return;
-      ring(e.x, e.y, { r0: 8, r1: 120, life: 1.1, c: '120,118,112', lw: 1 });
-    },
     frost: function (e, s) {                    // ICE
       if (Math.random() > 0.07 * s) return;
       spark(e.x + U.rand(-e.w * .5, e.w * .5), e.y + U.rand(-e.h * .4, e.h * .4), {
@@ -151,44 +140,19 @@ G.fx = (function () {
         c: '150,215,235', a: .8, shape: 'cross', drag: .96
       });
     },
-    ripple: function (e, s) {                   // TIME
-      if (Math.random() > 0.012 * s) return;
-      ring(e.x, e.y, { r0: e.w * .5, r1: e.w * .5 + 26, life: 1.4, c: '140,120,190', lw: 1 });
-    },
+    /* 자석은 쥐고 있을 때만 힘을 낸다. 내려놓은 채로 자기장을 그리면
+       가만히 두어도 무언가 하고 있는 것처럼 보인다 */
     field: function (e, s) {                    // MAGNET
-      if (Math.random() > 0.02 * s) return;
+      if (!e.dragging) return;
+      if (Math.random() > 0.09 * s) return;
       ring(e.x, e.y, { r0: 150, r1: 20, life: .9, c: '170,80,100', lw: 1 });
     },
-    steam: function (e, s) {                    // STEAM
-      if (Math.random() > 0.4 * s) return;
-      spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y - e.h * .2, {
-        vx: U.rand(-6, 6), vy: U.rand(-30, -16), g: -12,
-        r: U.rand(2.5, 5), life: U.rand(.8, 1.4),
-        c: '205,215,220', a: .35, drag: .97
-      });
-    },
-    grit: function (e, s) {                     // SAND
-      if (Math.random() > 0.09 * s) return;
-      spark(e.x + U.rand(-e.w * .45, e.w * .45), e.y + e.h * .3, {
-        vx: U.rand(-10, 10), vy: U.rand(-6, -1), g: 26,
-        r: U.rand(.8, 1.4), life: U.rand(.5, .9),
-        c: '200,180,130', a: .6
-      });
-    },
-    shine: function (e, s) {                    // GLASS
+    shine: function (e, s) {                    // 보석 (DIAMOND · EMERALD)
       if (Math.random() > 0.03 * s) return;
       var a = U.rand(0, Math.PI * 2);
       spark(e.x + Math.cos(a) * e.w * .45, e.y + Math.sin(a) * e.h * .4, {
         vx: Math.cos(a) * 16, vy: Math.sin(a) * 16,
         r: U.rand(1, 1.8), life: .7, c: '190,225,235', a: .9, shape: 'star', drag: .93
-      });
-    },
-    savory: function (e, s) {                   // ROAST
-      if (Math.random() > 0.3 * s) return;
-      spark(e.x + U.rand(-e.w * .35, e.w * .35), e.y - e.h * .25, {
-        vx: U.rand(-5, 5), vy: U.rand(-22, -12), g: -8,
-        r: U.rand(1.8, 3.4), life: U.rand(.9, 1.5),
-        c: '200,170,140', a: .3, drag: .97
       });
     },
     smoke: function (e, s) {                    // 불타는 중
@@ -254,7 +218,7 @@ G.fx = (function () {
     });
   }
 
-  /** 위험이 쌓이는 중 (FIRE ••• HOUSE) */
+  /** 위험이 쌓이는 중 (FIRE ••• TREE) */
   function dangerDots(ax, ay, bx, by, t, dt) {
     dots(ax, ay, bx, by, t, dt, '235,120,50');
   }

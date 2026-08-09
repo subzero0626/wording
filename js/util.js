@@ -49,6 +49,14 @@ G.util = (function () {
     return Math.max(0, Math.ceil(v)) + '초';
   }
 
+  /**
+   * 배수 표기. 게임에 나오는 배수는 전부 0 이나 5 로 끝나게 맞춰 두었으므로
+   * 뒤에 붙는 0 은 지운다 — ×2.00 이 아니라 ×2, ×0.50 이 아니라 ×0.5.
+   */
+  function mul(v) {
+    return String(Math.round(v * 100) / 100);
+  }
+
   /** 두 사각형(중심 기준)의 겹침 벡터. 안 겹치면 null */
   function overlap(a, b) {
     var dx = b.x - a.x, dy = b.y - a.y;
@@ -73,7 +81,7 @@ G.util = (function () {
     clamp: clamp, lerp: lerp, rand: rand, randInt: randInt, pick: pick, chance: chance,
     dist: dist, dist2: dist2, weightedPick: weightedPick,
     uid: uid, seedUid: seedUid, currentUid: currentUid,
-    num: num, money: money, secs: secs, overlap: overlap,
+    num: num, money: money, secs: secs, mul: mul, overlap: overlap,
     easeOutCubic: easeOutCubic, easeInOut: easeInOut, el: el
   };
 })();

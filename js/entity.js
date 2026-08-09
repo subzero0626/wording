@@ -39,18 +39,18 @@ var G = window.G || (window.G = {});
     this.calm = false;
     this.incomeMul = 1;
     this.gearMul = 1;
+    this.payMul = 1;          // 벌이 주기를 당기는 배수. SUN 이 올린다
     this.speedMul = 1;
-    this.hazardMul = 1;       // 위험(화재)이 쌓이는 속도. TIME 이 늦춘다
     this.suppress = 0;
     this.age = 0;
     this.data = {};
+    this.starEl = null;       // 강화 별 (FORGE 에 달구어야 생긴다)
 
     this.buildDom();
     this.measure();
     this.resetJumpTimer();
-    if (this.def && this.def.actEvery) {
-      this.actTimer = U.rand(this.def.actEvery[0] * .4, this.def.actEvery[1]);
-    }
+    /* 주사위를 굴리는 시점을 서로 어긋나게 (다 같이 굴리면 사건이 몰린다) */
+    if (this.def && this.def.act) this.actTimer = U.rand(1, C.PAY_PERIOD);
   }
 
   Entity.prototype.buildDom = function () {
@@ -183,17 +183,69 @@ var G = window.G || (window.G = {});
 
   /**
    * 배수까지 얹은 실제 벌이.
-   * 자리에서 얻는 배수(SUN·MOON·GLASS…)는 아무리 겹쳐도 INCOME_CAP 에서 잘린다.
+   * 자리에서 얻는 배수(SUN·MOON·LUCK…)는 아무리 겹쳐도 INCOME_CAP 에서 잘린다.
    * 톱니바퀴 배수는 그 천장과 따로 곱한다 — 맞물릴 수 있는 수가 넷으로 정해져 있어
    * 스스로 한계를 갖고, 보드 자리를 여러 칸 내주어야만 얻는 것이기 때문이다.
    */
   Entity.prototype.income = function () {
-    return this.payValue() * Math.min(this.incomeMul, C.INCOME_CAP) * this.gearMul;
+    return this.payValue() * Math.min(this.incomeMul, C.INCOME_CAP) *
+      this.gearMul * this.upMul() * this.worthMul();
+  };
+
+  /**
+   * HAMMER 로 다시 매겨진 값 (보석만 가진다).
+   * 20초마다 버는 돈에도, SHOP 에 넘길 때에도 똑같이 걸린다 —
+   * 한쪽에만 걸면 "팔 보석은 두드리고 둘 보석은 두드리지 않는" 요령이 생긴다.
+   */
+  Entity.prototype.worthMul = function () {
+    return (this.data && this.data.worth) || 1;
+  };
+
+  /**
+   * 강화로 얻은 영구 배수.
+   * 톱니와 마찬가지로 벌이 천장 바깥에서 곱한다 — 자리를 옮겨도 따라다니고,
+   * 잃을 것을 걸고 얻은 값이라 다른 부스터와 자리를 다투게 두지 않는다.
+   */
+  Entity.prototype.upMul = function () {
+    var lv = (this.data && this.data.up) || 0;
+    return lv > 0 ? C.UP_MUL[Math.min(lv, C.UP_MUL.length) - 1] : 1;
+  };
+
+  /** 왼쪽 위에 붙는 강화 별 */
+  Entity.prototype.setStars = function (n) {
+    if (!this.el) return;
+    if (!n) {
+      if (this.starEl) { this.el.removeChild(this.starEl); this.starEl = null; }
+      return;
+    }
+    if (!this.starEl) {
+      this.starEl = document.createElement('div');
+      this.starEl.className = 'stars';
+      this.el.appendChild(this.starEl);
+    }
+    var s = '';
+    for (var i = 0; i < n; i++) s += '<i></i>';
+    this.starEl.innerHTML = s;
+    this.starEl.dataset.n = n;
+  };
+
+  /**
+   * 벌이 주기를 얼마나 당겨 받고 있는가 (1 이면 제 속도).
+   * 한 번에 얼마를 버느냐(income)와 일부러 갈라 둔 값이다 —
+   * MOON 은 앞을, SUN 은 뒤를 맡는다. 한 덩어리로 두면 둘이 같은 단어가 된다.
+   */
+  Entity.prototype.haste = function () {
+    return Math.min(this.payMul, C.HASTE_CAP);
+  };
+
+  /** 20초 동안 실제로 들어오는 양 (주기까지 셈에 넣은 값) */
+  Entity.prototype.rate = function () {
+    return this.income() * this.haste();
   };
 
   /**
    * 무르익은 정도 (0~1). 글자는 그대로 두고 빛깔만 바꾼다.
-   * @param tint 'warm' 이면 노릇하게, 'green' 이면 푸르게. 기본은 warm
+   * @param tint 'green' 이면 푸르게, 'ash' 면 하얗게 바래게. 기본은 노릇하게
    */
   Entity.prototype.setRipe = function (p, tint) {
     p = Math.max(0, Math.min(1, p));
@@ -203,6 +255,7 @@ var G = window.G || (window.G = {});
     if (!this.el) return;
     this.el.style.setProperty('--cook', q.toFixed(2));
     this.el.classList.toggle('ripe-green', tint === 'green' && q > 0);
+    this.el.classList.toggle('ripe-ash', tint === 'ash' && q > 0);
   };
 
   /**
@@ -254,10 +307,14 @@ var G = window.G || (window.G = {});
       var nx = this.x + Math.cos(a) * d;
       var ny = this.y + Math.sin(a) * d * .8;
       var p = G.board.clampPoint(nx, ny, this);
+      /* 벽 너머로는 뛰지 않는다. 여섯 번을 다 물어도 갈 데가 없으면
+         이번에는 그냥 제자리에 있는다 — 다음 차례에 다시 물어본다 */
+      if (G.board.blocked(this.x, this.y, p.x, p.y, this)) continue;
       var score = G.board.crowdScore(p.x, p.y, this);
       if (!best || score < best.s) best = { x: p.x, y: p.y, s: score };
       if (score === 0) break;
     }
+    if (!best) return;
     this.jump = {
       sx: this.x, sy: this.y, tx: best.x, ty: best.y,
       t: 0, dur: dur || C.JUMP_DUR,
@@ -284,8 +341,9 @@ var G = window.G || (window.G = {});
     if (this.chill > 0) this.chill -= dt;
     if (this.suppress > 0) this.suppress -= dt;
 
-    /* 재화 지급 */
-    this.payTimer -= dt * this.speedMul;
+    /* 재화 지급 — 주기를 당기는 것은 payMul 뿐이다.
+       speedMul 은 "하는 일" 을 재촉할 뿐 벌이 주기에는 손대지 않는다 */
+    this.payTimer -= dt * this.haste();
     if (this.payTimer <= 0) {
       this.payTimer += C.PAY_PERIOD;
       var v = this.income();
@@ -314,6 +372,7 @@ var G = window.G || (window.G = {});
     } else if (!this.dragging) {
       /* 관성 이동 */
       if (this.vx || this.vy) {
+        var ox = this.x, oy = this.y;
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         var damp = Math.pow(0.90, dt * 60);
@@ -324,6 +383,10 @@ var G = window.G || (window.G = {});
         if (p.x !== this.x) this.vx *= -.4;
         if (p.y !== this.y) this.vy *= -.4;
         this.x = p.x; this.y = p.y;
+        /* 바람에 밀려 미끄러지다 벽을 만나면 거기서 멎는다 */
+        if (G.board.blocked(ox, oy, this.x, this.y, this)) {
+          this.x = ox; this.y = oy; this.vx = 0; this.vy = 0;
+        }
       }
 
       /* 점프 타이머 */
@@ -338,7 +401,7 @@ var G = window.G || (window.G = {});
       }
     }
 
-    if (this.burning) this.burnTime += dt * this.hazardMul;
+    if (this.burning) this.burnTime += dt;
   };
 
   Entity.prototype.land = function () {

@@ -41,9 +41,11 @@ G.game = (function () {
     if (saved && saved.ents && saved.ents.length) {
       G.save.restoreEntities(saved.ents);
       var gain = G.save.offlineGain(saved.t || Date.now());
+      var ghosts = G.save.ghostCount();
       if (gain > 1) {
         setTimeout(function () {
-          G.ui.toast('자리를 비운 동안 ' + U.money(gain) + ' 을 모았다');
+          G.ui.toast('자리를 비운 동안 ' + U.money(gain) + ' 을 모았다' +
+            (ghosts ? ' — 유령이 부지런했다' : ''));
         }, 700);
       }
       G.state.spawnTimer = Math.min(G.state.spawnTimer, spawnInterval());
@@ -150,11 +152,31 @@ G.game = (function () {
   /* ------------------------------------------------------------------
      글자 생성
      ------------------------------------------------------------------ */
+  /**
+   * 다음 글자까지의 간격.
+   * 업그레이드로 정해진 값에서 두 가지가 더 깎아 낸다 —
+   * 팔아 없앤 TIME 이 남긴 몫(영구)과, 지금 보드에 서 있는 CLOCK 들(한시적)이다.
+   * 둘을 합쳐도 SPAWN_FLOOR 밑으로는 내려가지 않는다.
+   */
   function spawnInterval() {
-    return C.SPAWN_STEPS[U.clamp(G.state.spawnLevel, 0, C.SPAWN_STEPS.length - 1)];
+    var base = C.SPAWN_STEPS[U.clamp(G.state.spawnLevel, 0, C.SPAWN_STEPS.length - 1)];
+    return Math.max(C.SPAWN_FLOOR, base - (G.state.timeCut || 0) - clockCut());
+  }
+
+  /** 보드에 서 있는 시계가 줄여 주는 초 (타 버린 시계는 세지 않는다) */
+  function clockCut() {
+    var list = G.board.all(), n = 0;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].type === 'word' && list[i].text === 'CLOCK' && !list[i].burning) n++;
+    }
+    return n * C.CLOCK_CUT;
   }
 
   function stepSpawn(dt) {
+    /* 시계를 새로 세우면 지금 기다리는 것부터 짧아진다.
+       다음 글자부터 적용하면 세워 놓고도 아무 일이 없는 것처럼 보인다 */
+    var iv = spawnInterval();
+    if (G.state.spawnTimer > iv) G.state.spawnTimer = iv;
     if (G.state.spawnTimer > 0) G.state.spawnTimer -= dt;
     if (G.state.spawnTimer > 0) return;
     /* 다 채워 놓고 자리가 없으면 게이지를 가득 찬 채로 붙잡아 둔다.
@@ -166,9 +188,23 @@ G.game = (function () {
     G.state.spawnTimer = spawnInterval();
   }
 
-  /** 남은 생성 대기를 당긴다 (WIND · LUCK · 판매) */
+  /** 남은 생성 대기를 당긴다 (WIND · LUCK) */
   function hurrySpawn(cut) {
     G.state.spawnTimer *= cut;
+  }
+
+  /**
+   * 낱글자 하나를 팔아 자리를 비웠다.
+   * 보통은 남은 대기를 반으로 당겨 준다. 다만 정원이 차서 게이지가 가득 찬 채로
+   * 멈춰 있었다면 그 자리를 다음 프레임에 도로 채워 버리게 되는데, 그러면
+   * 자리를 만들려고 판 것이 눈앞에서 없던 일이 된다. 그때는 새로 기다리게 한다.
+   */
+  function soldOne() {
+    if (G.state.spawnTimer > 0) {
+      G.state.spawnTimer *= C.SELL_COOLDOWN_CUT;
+      return;
+    }
+    G.state.spawnTimer = spawnInterval();
   }
 
   function buySpawnUpgrade() {
@@ -178,8 +214,21 @@ G.game = (function () {
     if (!G.board.spend(cost)) return false;
     G.state.spawnLevel++;
     G.state.spawnTimer = Math.min(G.state.spawnTimer, spawnInterval());
-    G.ui.toast('생성 간격 ' + C.SPAWN_STEPS[G.state.spawnLevel] + '초');
+    G.ui.toast('생성 간격 ' + spawnInterval().toFixed(1) + '초');
     return true;
+  }
+
+  /**
+   * TIME 을 팔았다 — 흘려보낸 시간을 돌려받는다.
+   * 보드에서 사라지는 대신 남는 것이라, 자리를 차지하지 않고 계속 쌓인다.
+   */
+  function sellTime() {
+    G.state.timeCut = (G.state.timeCut || 0) + C.TIME_CUT;
+    var iv = spawnInterval();
+    G.state.spawnTimer = Math.min(G.state.spawnTimer, iv);
+    G.ui.toast(iv <= C.SPAWN_FLOOR
+      ? '더는 빨라지지 않는다 — 생성 간격 ' + iv.toFixed(1) + '초'
+      : '시간을 돌려받았다 · 생성 간격 ' + iv.toFixed(1) + '초');
   }
 
   /* ------------------------------------------------------------------
@@ -221,19 +270,6 @@ G.game = (function () {
     }
   }
 
-  /** BOOK / LUCK 이 주는 무료 힌트 — 힌트권 없이 한 단계를 열어 준다 */
-  function freeHint() {
-    var pool = G.WORDS.filter(function (w) {
-      return !G.state.discovered[w.id] && (G.state.hints[w.id] || 0) < G.HINT_MAX;
-    });
-    if (!pool.length) return false;
-    var w = U.pick(pool);
-    G.state.hints[w.id] = (G.state.hints[w.id] || 0) + 1;
-    G.ui.renderCodex();
-    G.ui.toast('도감에 힌트가 하나 밝혀졌다');
-    return true;
-  }
-
   /* ------------------------------------------------------------------
      일시정지 / 초기화
      ------------------------------------------------------------------ */
@@ -262,9 +298,11 @@ G.game = (function () {
     spawnInterval: spawnInterval,
     stepSpawn: stepSpawn,        // 헤드리스 검증(_sim.js)에서 부른다
     hurrySpawn: hurrySpawn,
+    soldOne: soldOne,
+    clockCut: clockCut,
+    sellTime: sellTime,
     buySpawnUpgrade: buySpawnUpgrade,
     onWordFormed: onWordFormed,
-    freeHint: freeHint,
     setPaused: setPaused,
     hardReset: hardReset,
     get paused() { return paused; }

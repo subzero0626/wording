@@ -21,6 +21,9 @@ G.save = (function () {
       spawnLevel: 0,
       expandLevel: 0,
       spawnTimer: G.C.SPAWN_STEPS[0],
+      timeCut: 0,            // 팔아 없앤 TIME 이 남긴 몫 — 생성 간격에서 영구히 빠진다
+      vault: 0,              // BANK 금고에 맡겨 둔 돈 (은행이 타도 남는다)
+      vaultT: 0,             // 다음 지급까지 흐른 시간
       discovered: {},
       madeWords: {},
       hints: {},
@@ -80,6 +83,7 @@ G.save = (function () {
       e.data = d.data || {};
       e.age = d.age || 0;
       G.board.add(e);
+      if (e.data.up) e.setStars(e.data.up);
       if (d.burning) {
         e.burning = true;
         e.burnTime = d.burnTime || 0;
@@ -88,13 +92,27 @@ G.save = (function () {
     }
   }
 
-  /** 자리를 비운 동안의 보상 — 벌었을 액수의 OFFLINE_RATE 만큼 */
+  /** 보드에 서 있는 유령 수. 유령은 보는 눈이 없을 때만 일한다 (넷까지만 센다) */
+  function ghostCount() {
+    var n = 0, list = G.board.all();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].type === 'word' && list[i].text === 'GHOST' && !list[i].burning) n++;
+    }
+    return Math.min(G.C.GHOST_MAX, n);
+  }
+
+  /** 자리를 비운 동안 받는 몫. 유령 한 마리마다 조금씩 오른다 */
+  function offlineRate() {
+    return G.C.OFFLINE_RATE + ghostCount() * G.C.GHOST_OFFLINE;
+  }
+
+  /** 자리를 비운 동안의 보상 — 벌었을 액수의 offlineRate() 만큼 */
   function offlineGain(savedAt) {
     var dt = (Date.now() - savedAt) / 1000;
     if (!(dt > 0)) return 0;
     var used = Math.min(dt, G.C.OFFLINE_CAP);
     var perTick = G.board.payRate();
-    var gain = Math.round(perTick * (used / G.C.PAY_PERIOD) * G.C.OFFLINE_RATE);
+    var gain = Math.round(perTick * (used / G.C.PAY_PERIOD) * offlineRate());
     G.state.money += gain;
     G.state.totalEarned += gain;
     return gain;
@@ -102,6 +120,7 @@ G.save = (function () {
 
   return {
     newState: newState, write: write, read: read, clear: clear,
-    restoreEntities: restoreEntities, offlineGain: offlineGain
+    restoreEntities: restoreEntities, offlineGain: offlineGain,
+    ghostCount: ghostCount
   };
 })();
