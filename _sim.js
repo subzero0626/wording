@@ -260,6 +260,28 @@ clear();
 for (let i = 0; i < 40; i++) { if (G.board.count() < G.maxEntities()) G.board.spawnLetter(); }
 console.log('  0단계에서 40번 만들어 보면: ' + G.board.count() + '개에서 멈춘다');
 
+/* 다 찼을 때 게이지가 가득 찬 채로 붙잡혀 있다가, 자리가 나면 바로 나오는지 */
+{
+  clear();
+  while (G.board.count() < G.maxEntities()) G.board.spawnLetter();
+  G.state.spawnTimer = 0.2;
+  for (let i = 0; i < 30 * 30; i++) G.game.stepSpawn(DT);   // 정원이 찬 채로 30초
+  const held = G.state.spawnTimer;
+  const over = G.board.count() > G.maxEntities();
+  console.log('\n  정원이 찬 채 30초를 두면');
+  console.log('    남은 대기 ' + held.toFixed(2) + '초 → 게이지 ' +
+    (100 * Math.max(0, Math.min(1, 1 - held / G.game.spawnInterval()))).toFixed(0) + '%' +
+    (held === 0 ? ' (가득 찬 채로 멈춰 있다)' : ' (되감겼다 — 버그)'));
+  console.log('    정원을 넘겼는가 ' + (over ? '넘겼다 — 버그' : '아니다 ' + G.board.count() + '개'));
+
+  G.board.remove(G.board.all()[0]);                        // 한 칸 비우면
+  const before = G.board.count();
+  G.game.stepSpawn(DT);
+  console.log('    한 칸 비우고 한 프레임(' + (DT * 1000).toFixed(0) + 'ms) 뒤 ' +
+    before + '개 → ' + G.board.count() + '개' +
+    (G.board.count() > before ? ' (바로 나왔다)' : ' (안 나왔다 — 버그)'));
+}
+
 /* 3.7 ─ 능력 단어가 보통 단어보다 얼마나 더 버는가 ---------------------- */
 console.log('\n\n능력 단어의 벌이 (보통 단어 = 1.0)\n');
 

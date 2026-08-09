@@ -334,6 +334,11 @@ button{
 }
 #gauge.pulse #gaugeBar i{ background:linear-gradient(90deg,#4f9a72,#2f7d55); }
 #gauge.pulse #gaugeText{ color:var(--money); }
+/* 정원이 차서 게이지가 가득 찬 채로 멈춰 있을 때.
+   가만히 있으면 고장난 것처럼 보이니 숨만 쉬게 해 둔다 */
+#gauge.held #gaugeBar i{ background:linear-gradient(90deg,#c9a15c,#b4544a); animation:gaugeHeld 1.8s ease-in-out infinite; }
+#gauge.held #gaugeText{ color:#b4544a; }
+@keyframes gaugeHeld{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
 #gaugeText{
   margin-top:6px; font-size:11.5px; color:var(--ink-3);
   letter-spacing:.02em; font-variant-numeric:tabular-nums;

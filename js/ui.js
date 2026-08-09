@@ -135,10 +135,14 @@ G.ui = (function () {
 
     var left = G.state.spawnTimer;
     var p = U.clamp(1 - left / G.game.spawnInterval(), 0, 1);
+    var held = full && left <= 0;      // 다 세어 놓고 자리가 나기만 기다리는 중
     elGaugeBar.style.width = (p * 100).toFixed(1) + '%';
-    elGaugeText.textContent = full
-      ? '보드가 가득 찼다 — 넓히면 더 둘 수 있다'
-      : '다음 글자 ' + U.secs(left);
+    elGauge.classList.toggle('held', held);
+    elGaugeText.textContent = held
+      ? '자리가 없다 — 한 칸만 비면 바로 나온다'
+      : full
+        ? '보드가 가득 찼다 — 넓히면 더 둘 수 있다'
+        : '다음 글자 ' + U.secs(left);
     if (!elSpawnPop.classList.contains('hidden')) renderSpawnPop();
     if (chipEdge) updateChip();
   }

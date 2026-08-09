@@ -155,12 +155,13 @@ G.game = (function () {
   }
 
   function stepSpawn(dt) {
-    G.state.spawnTimer -= dt;
+    if (G.state.spawnTimer > 0) G.state.spawnTimer -= dt;
     if (G.state.spawnTimer > 0) return;
-    if (G.board.count() >= G.maxEntities()) {
-      G.state.spawnTimer = 3;       // 보드가 꽉 찼다 — 잠시 후 다시 시도
-      return;
-    }
+    /* 다 채워 놓고 자리가 없으면 게이지를 가득 찬 채로 붙잡아 둔다.
+       다시 세게 하면 게이지가 눈앞에서 되감겨 기다린 시간을 뺏긴 것처럼 보인다.
+       한 칸이라도 나는 순간 그 프레임에 바로 내보낸다. */
+    G.state.spawnTimer = 0;
+    if (G.board.count() >= G.maxEntities()) return;
     G.board.spawnLetter();
     G.state.spawnTimer = spawnInterval();
   }
@@ -259,6 +260,7 @@ G.game = (function () {
   return {
     init: init,
     spawnInterval: spawnInterval,
+    stepSpawn: stepSpawn,        // 헤드리스 검증(_sim.js)에서 부른다
     hurrySpawn: hurrySpawn,
     buySpawnUpgrade: buySpawnUpgrade,
     onWordFormed: onWordFormed,
