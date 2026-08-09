@@ -54,11 +54,14 @@ G.ui = (function () {
       ev.stopPropagation();
       if (G.game.buySpawnUpgrade()) { renderSpawnPop(); }
     });
-    /* --- 재화를 누르면 그 아래에 힌트권 구매창 --- */
+    /* --- 재화(또는 도감 안의 힌트권 띠)를 누르면 구매창 --- */
     elMoney.addEventListener('click', function (ev) {
       ev.stopPropagation();
       if (elTicketPop.classList.contains('hidden')) openTicketPop();
       else closePopovers();
+    });
+    elCodexTickets.addEventListener('click', function (ev) {
+      ev.stopPropagation(); openTicketPop();
     });
     buildTicketButtons();
 
@@ -209,6 +212,7 @@ G.ui = (function () {
   function openSpawnPop() {
     closePopovers();
     elSpawnPop.classList.remove('hidden');
+    elGauge.classList.add('tipoff');     // 창이 떴으면 말풍선까지 겹칠 필요 없다
     renderSpawnPop();
   }
 
@@ -242,7 +246,7 @@ G.ui = (function () {
     var html = '';
     for (var i = 0; i < C.TICKET_PACKS.length; i++) {
       html += '<button class="tk-b" data-n="' + C.TICKET_PACKS[i] + '">' +
-        '<b>' + C.TICKET_PACKS[i] + '장</b><span></span></button>';
+        '<b>' + C.TICKET_PACKS[i] + '장 사기</b><span></span></button>';
     }
     elTicketBuys.innerHTML = html;
     var bs = elTicketBuys.querySelectorAll('.tk-b');
@@ -257,12 +261,13 @@ G.ui = (function () {
   function openTicketPop() {
     closePopovers();
     elTicketPop.classList.remove('hidden');
+    elMoney.classList.add('tipoff');
     renderTicketPop();
   }
 
   function renderTicketPop() {
     elTicketPop.querySelector('.tk-have').textContent = G.state.tickets + '장';
-    elTicketPop.querySelector('.tk-next b').textContent = U.money(G.ticketPrice());
+    elTicketPop.querySelector('.tk-next b').textContent = U.money(C.TICKET_STEP);
     var bs = elTicketBuys.querySelectorAll('.tk-b');
     for (var i = 0; i < bs.length; i++) {
       var n = +bs[i].dataset.n, cost = G.ticketPack(n);
@@ -342,6 +347,8 @@ G.ui = (function () {
     elSpawnPop.classList.add('hidden');
     elWordPop.classList.add('hidden');
     elTicketPop.classList.add('hidden');
+    elGauge.classList.remove('tipoff');
+    elMoney.classList.remove('tipoff');
   }
 
   /* ------------------------------------------------------------------
@@ -521,8 +528,16 @@ G.ui = (function () {
         if (hint >= 2) html += '<div class="d">' + maskUnknown(w.hint) + '</div>';
         var need = G.hintTickets(hint);
         if (need) {
-          html += '<div class="ask' + (G.state.tickets >= need ? '' : ' poor') + '">힌트권 ' +
-            need + '장</div>';
+          /* 값만 적어 두면 눌러도 되는 자리인지, 눌러서 뭘 얻는지 알 수 없다.
+             단계 표시 · 값 · 무엇이 열리는지를 한 줄에 같이 놓는다. */
+          var pips = '';
+          for (var p = 0; p < G.HINT_MAX; p++) {
+            pips += '<i class="pip' + (p < hint ? ' on' : '') + '"></i>';
+          }
+          html += '<div class="ask' + (G.state.tickets >= need ? '' : ' poor') + '">' +
+            '<span class="pips">' + pips + '</span>' +
+            '<span class="cost">힌트권 ' + need + '장</span>' +
+            '<span class="gain">' + C.HINT_GAIN[hint] + '</span></div>';
         }
       }
       html += '</div></div>';
@@ -535,7 +550,8 @@ G.ui = (function () {
       ? '그 밖에 만들어 본 단어 <b>' + made + '</b>개 · 사전에 있는 단어라면 무엇이든 만들 수 있다'
       : '보드에서 글자를 끌어다 붙이면 단어가 됩니다.';
 
-    elCodexTickets.textContent = '힌트권 ' + G.state.tickets + '장';
+    elCodexTickets.querySelector('.ct-n').textContent = G.state.tickets + '장';
+    elCodexTickets.classList.toggle('empty', !G.state.tickets);
 
     var rows = elCodexList.querySelectorAll('.askable');
     for (var b = 0; b < rows.length; b++) {
