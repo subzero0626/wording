@@ -157,7 +157,7 @@ G.game = (function () {
   function stepSpawn(dt) {
     G.state.spawnTimer -= dt;
     if (G.state.spawnTimer > 0) return;
-    if (G.board.count() >= C.MAX_ENTITIES) {
+    if (G.board.count() >= G.maxEntities()) {
       G.state.spawnTimer = 3;       // 보드가 꽉 찼다 — 잠시 후 다시 시도
       return;
     }

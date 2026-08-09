@@ -1,6 +1,10 @@
 /* ==========================================================================
    drag.js — 드래그, 스냅, 글자 조합
    플레이어가 직접 끌어다 붙이는 것만이 단어를 만드는 유일한 방법이다.
+
+   붙는 쪽은 언제나 낱글자와 덩어리다. 완성된 단어를 집었을 때는 아무 데도
+   달라붙지 않는다 — 다 만든 단어는 자리를 잡아 주는 것이 주된 일이라,
+   옮기다가 옆엣것을 삼켜 버리면 곤란하다.
    ========================================================================== */
 var G = window.G || (window.G = {});
 
@@ -94,6 +98,7 @@ G.drag = (function () {
 
     outside = sellable(cur) && outDist > C.SELL_MARGIN;
     cur.el.classList.toggle('selling', outside);
+    cur.el.classList.toggle('nomerge', cur.afflicted());
 
     if (outDist > 0.5) {
       /* 경계를 넘어선 만큼은 일부만 따라온다 — 끌어낼 때 손에 걸리는 느낌 */
@@ -126,12 +131,11 @@ G.drag = (function () {
   function sellable(e) { return !!e && e.type === 'letter'; }
 
   /**
-   * 완성된 단어가 걸려 있는 조합인가.
+   * 완성된 단어에 붙이는 것인가.
    * 붙는 순간 단어 하나가 사라지는 셈이라, 잠깐 대고 있어야 실행된다.
-   * 끌고 있는 쪽이 단어일 때도 마찬가지다 (MOTH 를 E 위에 떨어뜨리는 경우).
    */
   function needsHold(target) {
-    return target.type === 'word' || (!!cur && cur.type === 'word');
+    return target.type === 'word';
   }
 
   /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이려면 시간이 걸린다 */
@@ -152,7 +156,7 @@ G.drag = (function () {
     if (!cur) return;
     var e = cur;
     e.dragging = false;
-    e.el.classList.remove('drag', 'selling');
+    e.el.classList.remove('drag', 'selling', 'nomerge');
     e.resetJumpTimer();
 
     var s = snap;
@@ -204,7 +208,7 @@ G.drag = (function () {
    * 붙일 수 있는가?
    * 글자·덩어리끼리는 아무렇게나 붙일 수 있다 (덩어리가 되어도 괜찮다).
    *
-   * 완성된 단어가 끼어 있을 때는 결과가 단어이거나, 적어도 글자를 더 붙이면
+   * 완성된 단어에 붙일 때는 결과가 단어이거나, 적어도 글자를 더 붙이면
    * 단어가 될 조각이어야 한다 — MOTH 에 E 를 붙여 MOTHE 로 두었다가 R 을 마저
    * 붙여 MOTHER 로 키우는 식이다. 아무 데로도 이어지지 않는 조각이면 애써 만든
    * 단어가 그냥 망가지는 것이라 막는다. (덩어리는 더블클릭으로 되돌릴 수 있다)
@@ -218,13 +222,17 @@ G.drag = (function () {
   }
 
   function updateSnap() {
+    /* 직전 후보를 기억해 둔다. 여기서 snap 을 먼저 비워 버리면 아래에서
+       "대상이 바뀌었나" 를 물을 때 언제나 바뀐 것으로 읽혀, 손이 조금만
+       흔들려도 대고 있던 시간이 0 으로 돌아간다 */
+    var prev = snap;
     snap = null;
-    if (!cur) return;
+    if (!cur || cur.type === 'word' || cur.afflicted()) return;
 
     var list = G.board.all(), best = null;
     for (var i = 0; i < list.length; i++) {
       var o = list[i];
-      if (o === cur || o.merging) continue;
+      if (o === cur || o.merging || o.afflicted()) continue;
 
       var dy = Math.abs(o.y - rawY);
       if (dy > C.SNAP_DY) continue;
@@ -255,7 +263,7 @@ G.drag = (function () {
         : o2.x + o2.w / 2 + cur.w / 2 - 2;
 
       /* 대상이 바뀌면 "대고 있던 시간" 을 처음부터 */
-      if (!snap || snap.target !== o2 || snap.side !== best.side) holdT = 0;
+      if (!prev || prev.target !== o2 || prev.side !== best.side) holdT = 0;
 
       /* 단어가 걸려 있으면 잠깐 대고 있어야 한다 */
       best.armed = !needsHold(o2) || (holdT >= C.WORD_HOLD);
@@ -337,7 +345,7 @@ G.drag = (function () {
      ------------------------------------------------------------------ */
   function doSnap(e, s) {
     var t = s.target;
-    if (!G.board.get(t.id)) { e.land(); return; }
+    if (!G.board.get(t.id) || e.afflicted() || t.afflicted()) { e.land(); return; }
 
     /* 딱 맞는 자리로 붙여 놓고, 합쳐질 때까지 아무도 밀지 못하게 잠근다 */
     var c = G.board.clampPoint(s.x, s.y, e);
@@ -351,7 +359,7 @@ G.drag = (function () {
     var cy = t.y;
 
     setTimeout(function () {
-      if (!G.board.get(e.id) || !G.board.get(t.id)) {
+      if (!G.board.get(e.id) || !G.board.get(t.id) || e.afflicted() || t.afflicted()) {
         e.merging = false; t.merging = false;
         return;
       }
@@ -360,8 +368,6 @@ G.drag = (function () {
   }
 
   function merge(a, b, text, cx, cy) {
-    /* 붙여 버린다고 불이 꺼지지는 않는다 (물을 대야 한다) */
-    var fire = a.burning ? a.burnTime : (b.burning ? b.burnTime : -1);
     G.board.remove(a);
     G.board.remove(b);
 
@@ -383,7 +389,6 @@ G.drag = (function () {
       G.board.add(ne);
       G.fx.spark(cx, cy, { vx: 0, vy: -14, r: 2, life: .4, c: '160,155,148', a: .6 });
     }
-    if (fire >= 0) { ne.ignite(); ne.burnTime = fire; }
     ne.land();
     return ne;
   }
@@ -398,7 +403,7 @@ G.drag = (function () {
   function cancel() {
     if (cur) {
       cur.dragging = false;
-      cur.el.classList.remove('drag', 'selling');
+      cur.el.classList.remove('drag', 'selling', 'nomerge');
       var b = G.board.clampPoint(cur.x, cur.y, cur);
       cur.x = b.x; cur.y = b.y;
       cur = null;

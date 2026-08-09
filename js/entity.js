@@ -38,6 +38,7 @@ var G = window.G || (window.G = {});
     this.heldBy = null;
     this.calm = false;
     this.incomeMul = 1;
+    this.gearMul = 1;
     this.speedMul = 1;
     this.hazardMul = 1;       // 위험(화재)이 쌓이는 속도. TIME 이 늦춘다
     this.suppress = 0;
@@ -172,7 +173,7 @@ var G = window.G || (window.G = {});
   /* ------------------------------------------------------------------
      재화
      ------------------------------------------------------------------ */
-  /** 한 번에 버는 양 */
+  /** 한 번에 버는 양 (배수를 빼고) */
   Entity.prototype.payValue = function () {
     if (this.burning) return 0;
     if (this.type === 'letter') return C.PAY_BASE;
@@ -180,13 +181,38 @@ var G = window.G || (window.G = {});
     return (this.def.value || 0);
   };
 
-  /** 익어 가는 정도 (0~1). 이만큼 노릇해진다 */
-  Entity.prototype.setCook = function (p) {
+  /**
+   * 배수까지 얹은 실제 벌이.
+   * 자리에서 얻는 배수(SUN·MOON·GLASS…)는 아무리 겹쳐도 INCOME_CAP 에서 잘린다.
+   * 톱니바퀴 배수는 그 천장과 따로 곱한다 — 맞물릴 수 있는 수가 넷으로 정해져 있어
+   * 스스로 한계를 갖고, 보드 자리를 여러 칸 내주어야만 얻는 것이기 때문이다.
+   */
+  Entity.prototype.income = function () {
+    return this.payValue() * Math.min(this.incomeMul, C.INCOME_CAP) * this.gearMul;
+  };
+
+  /**
+   * 무르익은 정도 (0~1). 글자는 그대로 두고 빛깔만 바꾼다.
+   * @param tint 'warm' 이면 노릇하게, 'green' 이면 푸르게. 기본은 warm
+   */
+  Entity.prototype.setRipe = function (p, tint) {
     p = Math.max(0, Math.min(1, p));
     var q = Math.round(p * 12) / 12;
-    if (this.cookShown === q) return;
-    this.cookShown = q;
-    if (this.el) this.el.style.setProperty('--cook', q.toFixed(2));
+    if (this.ripeShown === q) return;
+    this.ripeShown = q;
+    if (!this.el) return;
+    this.el.style.setProperty('--cook', q.toFixed(2));
+    this.el.classList.toggle('ripe-green', tint === 'green' && q > 0);
+  };
+
+  /**
+   * 무언가에 걸려 있는 상태인가 — 타는 중, 얼어붙음, 물을 뒤집어씀, 익는 중.
+   * 이런 글자는 다른 글자와 붙지 않는다. 먼저 상태를 풀어 줘야 한다.
+   * 다 익은 것까지 막는 것은 실수로 애써 익힌 것을 뭉개지 않게 하려는 뜻이다.
+   */
+  Entity.prototype.afflicted = function () {
+    return this.burning || this.chill > 0 || this.suppress > 0 ||
+      (this.ripeShown || 0) > 0;
   };
 
   /* ------------------------------------------------------------------
@@ -262,7 +288,7 @@ var G = window.G || (window.G = {});
     this.payTimer -= dt * this.speedMul;
     if (this.payTimer <= 0) {
       this.payTimer += C.PAY_PERIOD;
-      var v = this.payValue() * this.incomeMul;
+      var v = this.income();
       if (v > 0) {
         var paid = Math.max(1, Math.round(v));
         G.board.earn(paid);

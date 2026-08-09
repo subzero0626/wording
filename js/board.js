@@ -217,6 +217,7 @@ G.board = (function () {
       e.speedMul = 1;
       e.hazardMul = 1;
       e.incomeMul = 1;
+      e.gearMul = 1;          // 톱니바퀴가 맞물려 얻는 배수 (상한과 따로 논다)
       e.stoke = 1;            // COAL 이 지핀 불은 더 빨리 굽고 태운다
       e.calm = false;
       e.heldBy = null;
@@ -300,7 +301,7 @@ G.board = (function () {
   /** 보드 전체가 20초에 버는 총액 (표시용) */
   function payRate() {
     var sum = 0;
-    for (var i = 0; i < ents.length; i++) sum += ents[i].payValue() * ents[i].incomeMul;
+    for (var i = 0; i < ents.length; i++) sum += ents[i].income();
     return sum;
   }
 

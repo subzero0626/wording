@@ -1,8 +1,8 @@
 /* ==========================================================================
-   data.js — 밸런스 상수 + 능력 단어 50개 정의
+   data.js — 밸런스 상수 + 능력 단어 51개 정의
    --------------------------------------------------------------------------
    사전(dict.js)에 있는 6만여 개 단어는 전부 만들 수 있고 재화를 번다.
-   그중 아래 50개만 특별한 "능력"을 가진다.
+   그중 아래 51개만 특별한 "능력"을 가진다.
 
    설계 규칙: 단어는 자기 뜻대로 행동한다. 그 성격이 이로울지 해로울지는
    플레이어가 어디에 놓느냐가 정한다.
@@ -17,16 +17,20 @@
 
    act      : behaviors.js 의 ACTIONS[key] 에 대응하는 주기 행동
    bonds    : "가까이 + 일정 시간" 유지되어야 발동하는 상호작용
-              { with, range, time, key, into }  →  behaviors.js 의 BONDS[key]
+              { with, range, time, key }  →  behaviors.js 의 BONDS[key]
               with 는 단어 id 배열 또는 '#tag' 또는 '@letter'
-              key:'cook' 은 into 에 적은 단어로 변신한다 (조리·제련·숙성 공용)
+
+   글자가 다른 글자로 바뀌는 상호작용은 두지 않는다. MEAT 는 구워도 MEAT 고,
+   SAND 는 녹여도 SAND 다 — 빛깔과 벌이만 변한다 (behaviors.js 의 ripen).
+   결과물로 나오던 ROAST·GLASS·CHEESE·TREE 는 전부 직접 철자해서 만드는 단어라,
+   변신을 두면 같은 단어를 얻는 길이 둘이 되고 애써 만든 단어가 제멋대로 사라진다.
    ========================================================================== */
 var G = window.G || (window.G = {});
 
 /* 테스트용 스위치 — 켜면 도감이 전부 열린 것처럼 보인다.
    보여주기만 하는 것이라 실제 발견 기록에는 손대지 않는다. false 로 되돌리면
    원래 진행 상황이 그대로 돌아온다. */
-G.TEST_UNLOCK_ALL = true;
+G.TEST_UNLOCK_ALL = false;
 
 G.C = {
   /* --- 오브젝트 크기 근사식 (실제 값은 DOM 에서 측정한다) --- */
@@ -42,13 +46,22 @@ G.C = {
   MIN_WORD_LEN: 3,       // 이보다 짧으면 단어가 되지 않는다
 
   /* --- 글자 생성 ---
-     초반은 싸게 시작해서 뒤로 갈수록 배율이 커진다 (×2.1 → ×2.45) */
-  SPAWN_STEPS: [45, 41, 37, 34, 31, 28, 25, 23, 21, 19, 18],
-  SPAWN_COSTS: [80, 170, 360, 780, 1700, 3800, 8600, 20000, 47000, 115000],
+     45초에서 한 번에 2초씩, 21초까지 열두 번 줄일 수 있다.
+     한 걸음이 작은 대신 걸음 수가 많아 후반까지 살 것이 남는다.
+     값은 초반은 싸게 시작해서 뒤로 갈수록 배율이 커진다 (×2.1 → ×2.35) */
+  SPAWN_STEPS: [45, 43, 41, 39, 37, 35, 33, 31, 29, 27, 25, 23, 21],
+  SPAWN_COSTS: [60, 130, 270, 560, 1200, 2600, 5600, 12000, 27000, 62000, 145000, 340000],
 
-  /* --- 보드 확장 (available 영역 대비 비율) --- */
-  EXPAND_SCALE: [0.40, 0.46, 0.53, 0.60, 0.68, 0.77, 0.87],
+  /* --- 보드 확장 (available 영역 대비 비율) ---
+     한 단계에 0.04 씩. 정원이 여섯 개씩 느는 것과 보조를 맞춘 값이다 —
+     가로세로가 같이 늘어 넓이는 제곱으로 커지므로, 예전처럼 0.87 까지 가면
+     넓이가 4.7배 되는 동안 정원은 2.6배밖에 안 늘어 보드가 휑해진다 */
+  EXPAND_SCALE: [0.40, 0.44, 0.48, 0.52, 0.56, 0.60, 0.64],
   EXPAND_COSTS: [100, 300, 950, 3200, 12000, 46000],
+  /* 확장 단계마다 보드에 둘 수 있는 글자 수. 넓이만 늘고 상한이 그대로면
+     확장을 살 이유가 약하다. 자리와 정원이 같이 늘어야 한다.
+     한 단계에 여섯 개씩 고르게 늘린다 */
+  BOARD_MAX: [20, 24, 28, 32, 36, 40, 44],
 
   /* --- 도감 힌트 (1단계: 첫 글자+분류, 2단계: 짧은 설명) ---
      아래는 첫 힌트 값이고, 많이 살수록 HINT_STEP 만큼 비싸진다 */
@@ -68,10 +81,36 @@ G.C = {
   /* --- 화재 --- */
   BURN_COLLAPSE: 42,     // 이만큼 타면 무너져 글자로 흩어진다
 
-  /* --- 조리 --- 다 구워지면 불에서 빼내야 한다 */
-  ROAST_HOT: 100,        // 갓 구운 상태가 유지되는 시간
-  ROAST_MUL: 2.5,        // 갓 구웠을 때의 벌이 배수 (식으면서 1 로 내려간다)
-  ROAST_BURN: 20,        // 다 구워진 뒤에도 불 옆에 이만큼 두면 타 버린다
+  /* --- 무르익음 ---
+     짝이 곁에 있으면 천천히 익는다. 글자는 절대 바뀌지 않는다 —
+     빛깔이 변하고 벌이가 오를 뿐이다. 한번 익은 것은 되돌아가지 않는다.
+     불에 익히는 것만은 다 익은 뒤에도 놔두면 타 버리니 제때 빼내야 한다. */
+  RIPE_MUL: 2.0,         // 다 익었을 때의 벌이 배수
+  ROAST_MUL: 2.0,        // 처음부터 익어 있는 ROAST 의 벌이 배수
+  ROAST_BURN: 20,        // 다 익은 뒤에도 불 옆에 이만큼 두면 타 버린다
+
+  /* --- 벌이 배수 상한 ---
+     배수는 곱으로 붙는다. SUN·MOON·GLASS·LAMP·GHOST 를 한 자리에 다 모으면
+     한 단어가 혼자 다섯 배, 열 배를 벌어들여 나머지 보드가 장식이 되어 버린다.
+     한 단어가 아무리 좋은 자리에 있어도 여기까지다 — 여러 단어를 골고루
+     챙기는 쪽이 한 단어에 몰아주는 쪽보다 낫도록 만드는 장치다. */
+  INCOME_CAP: 3.2,
+
+  /* --- 톱니바퀴 ---
+     이가 맞물리려면 그냥 가까운 정도로는 안 되고 거의 겹치도록 붙여야 한다.
+     중심 사이 거리로 재는 것은 이때뿐이다. 톱니 폭만큼으로 잡아 두면
+     위·아래·좌·우 넷까지만 물릴 수 있고 대각선은 닿지 않는다. */
+  GEAR_MESH: 70,         // 중심 사이가 이 안쪽이면 맞물린 것으로 본다
+  GEAR_MAX: 4,           // 하나에 물릴 수 있는 톱니 수
+  GEAR_MUL: 2,           // 맞물린 톱니 하나당 제 벌이 배수
+
+  /* --- "가까이 있다" 의 기준 ---
+     각 단어에 적힌 range 는 중심 사이 거리가 아니라 글자와 글자 사이의 빈 틈으로 친다.
+     긴 단어라고 해서 사정거리가 저절로 넓어지지 않고, 눈에 보이는 간격 그대로 맞는다.
+       틈 = (range - RANGE_BASE) × RANGE_MUL, 최소 RANGE_MIN */
+  RANGE_BASE: 88,        // 보통 단어 하나 너비. 이만큼은 애초에 붙어 있는 셈이다
+  RANGE_MUL: 0.62,       // 낮출수록 바짝 붙여 놓아야 상호작용이 일어난다
+  RANGE_MIN: 16,         // 아무리 짧은 range 라도 이만큼은 떨어져 있어도 된다
 
 
   WIND_CUT: 0.7,         // 바람이 불면 남은 생성 쿨다운이 이 비율로 줄어든다
@@ -95,8 +134,14 @@ G.C = {
   EDGE_MAX: 96,          // 경계 밖으로 끌려나올 수 있는 최대 거리
   SELL_COOLDOWN_CUT: 0.5,// 판매하면 남은 생성 쿨다운이 이 비율로 줄어든다
 
-  START_LETTERS: 8,
-  MAX_ENTITIES: 90
+  START_LETTERS: 8
+};
+
+/** 지금 확장 단계에서 보드에 둘 수 있는 최대 개수 */
+G.maxEntities = function () {
+  var m = G.C.BOARD_MAX;
+  var lv = G.state ? G.state.expandLevel : 0;
+  return m[Math.max(0, Math.min(lv, m.length - 1))];
 };
 
 /**
@@ -125,24 +170,27 @@ G.wordValue = function (len, mult) {
 };
 
 /* ==========================================================================
-   능력 단어 50개
+   능력 단어 51개
    --------------------------------------------------------------------------
    상호작용이 이 게임의 전부다. 아래 표가 지도다.
 
-   불        FIRE + #burnable → 화재 / FIRE + MEAT → ROAST / FIRE + SAND → GLASS
-             FIRE + ICE → WATER / FIRE + WATER → STEAM / FIRE + RUBY·IRON → 값이 오른다
+   무르익음  MEAT + FIRE / MILK + TIME / SEED + SUN·물 / EGG + NEST·BIRD
+             빛깔이 변하고 벌이가 오른다. 글자는 끝까지 그대로다
+   불        FIRE + #burnable → 화재 / FIRE + RUBY·IRON → 값이 오른다
              FIRE + COAL → 불길이 세진다 / GLASS + SUN → 초점에 불이 붙는다
    보석      GOLD · IRON · RUBY · EMERALD · DIAMOND 를 SHOP 위에 올리면 목돈이 된다
-   물        WATER·RAIN·RIVER 가 불을 끈다 / RIVER 가 낱글자를 하류로 나른다
-             ROCK + RIVER → SAND / STEAM 은 식으면 WATER 로 돌아간다
-   풀        SEED → TREE → (타면) COAL / BEE + TREE → 수분 / BUG 가 TREE 를 갉는다
+   물        WATER·RAIN·RIVER·SAND 가 불을 끈다 / RIVER 가 낱글자를 하류로 나른다
+             ROCK + RIVER → 여울에 낱글자가 모인다 / WATER + FIRE → 끓어 주변을 재촉
+             ICE + FIRE → 녹으며 불을 끄고, 열에서 떼면 도로 언다
+   풀        BEE + TREE → 수분 / BUG 가 TREE 를 갉는다 / TREE 가 글자를 떨군다
    짐승      CAT + MILK·MEAT → 정착 / CAT + MOUSE → 사냥 / DOG + BONE·MEAT → 땅파기
-             BIRD + BUG → 사냥 / BIRD + NEST·TREE → EGG → BIRD
-             MOUSE + CHEESE → 길들임 / MILK + TIME → CHEESE
+             BIRD + BUG → 사냥 / BIRD + NEST·TREE → 글자를 떨군다
+             MOUSE + CHEESE → 길들임
    살림      KEY + BOX → 개봉 / LAMP + GHOST → 퇴치 / LAMP·SUN + GLASS → 렌즈
              ROAD + CAR → 배달 / BANK + GOLD → 시세 / CLOCK·TIME → 속도와 위험
-   플레이어  연기가 짙어지기 전에 ROAST 를 불에서 빼내기 / 보석을 만들어 SHOP 에 팔기
-             불이 번지기 전에 WATER 를 대거나 ROCK 으로 막기
+             GEAR + GEAR → 맞물린 개수만큼 제 벌이가 곱절 (최대 넷)
+   플레이어  다 익은 MEAT·ROAST 를 타기 전에 불에서 빼내기 / 보석을 만들어 SHOP 에 팔기
+             불이 번지기 전에 WATER·SAND 를 대거나 ROCK 으로 막기
    ========================================================================== */
 G.WORDS = [
 
@@ -214,15 +262,12 @@ G.WORDS = [
   {
     id: 'WATER', kind: '자연', tags: ['wet'],
     desc: '고여 있는 물. 주변에서 타고 있는 것을 꺼 주고, FIRE 옆에 잠깐만 있어도 그 기세를 ' +
-      '한동안 꺾어 놓는다. 다만 불 곁에 너무 오래 두면 결국 말라 STEAM 이 된다.',
+      '한동안 꺾어 놓는다. 불 곁에서는 끓어올라 주변 단어들의 행동을 재촉한다.',
     hint: '고여 있다',
     color: { fg: '#1d6fa5', bd: '#9dc9e4' },
     anim: 'wave', fx: 'drop',
     motion: { min: 14, max: 26, range: 70 },
-    bonds: [
-      { with: ['FIRE'], range: 108, time: 5, key: 'douse' },
-      { with: ['FIRE'], range: 108, time: 45, key: 'cook', into: 'STEAM' }
-    ]
+    bonds: [{ with: ['FIRE'], range: 108, time: 5, key: 'douse' }]
   },
   {
     id: 'RIVER', kind: '장소', tags: ['wet'],
@@ -236,17 +281,17 @@ G.WORDS = [
   {
     id: 'ICE', kind: '자연', tags: ['cold', 'wet'],
     desc: '주변 물체를 얼려 뛰어다니지 못하게 한다. 글자를 한자리에 붙들어 둘 때 쓴다. ' +
-      'FIRE 곁에 오래 두면 녹아서 WATER 가 된다.',
+      'FIRE 곁에서는 녹아내려 얼리는 힘을 잃지만, 녹는 동안 흘린 물이 불을 꺼 준다. ' +
+      '열에서 떼어 놓으면 다시 얼어붙는다.',
     hint: '차갑다',
     color: { fg: '#3a8fb0', bd: '#b6e0ee' },
     anim: 'pulse', fx: 'frost',
-    motion: { min: 30, max: 52, range: 40 },
-    bonds: [{ with: ['FIRE'], range: 104, time: 15, key: 'cook', into: 'WATER' }]
+    motion: { min: 30, max: 52, range: 40 }
   },
   {
     id: 'STEAM', kind: '자연', tags: ['hot', 'wet'],
-    desc: '펄펄 끓어오르는 김. 주변 단어들의 행동을 크게 재촉하지만 오래가지 못한다. ' +
-      '식고 나면 다시 WATER 로 돌아간다.',
+    desc: '펄펄 끓어오르는 김. 주변 단어들의 행동을 크게 재촉한다. 가만히 두면 김이 식어 ' +
+      '힘을 잃으니, FIRE 나 끓는 WATER 곁에 두어 계속 데워 주어야 한다.',
     hint: '끓어오른다',
     color: { fg: '#7c8a92', bd: '#cfd8dc' },
     anim: 'float', fx: 'steam',
@@ -258,9 +303,9 @@ G.WORDS = [
      ------------------------------------------------------------------ */
   {
     id: 'FIRE', kind: '자연', tags: ['hot'],
-    desc: '가연성 단어 곁에 한참 붙어 있으면 결국 불이 옮아붙는다. 하지만 굽고 녹이는 일은 ' +
-      '불이 있어야 한다 — MEAT 를 굽고, SAND 를 녹여 GLASS 로 만든다. 불에 들어가야 값이 ' +
-      '오르는 것도 있다. WATER 가 가까이 오면 힘을 잃고, COAL 이 있으면 불길이 거세진다.',
+    desc: '가연성 단어 곁에 한참 붙어 있으면 결국 불이 옮아붙는다. 하지만 굽는 일은 ' +
+      '불이 있어야 한다 — MEAT 를 노릇하게 익히고, 불에 들어가야 값이 오르는 광물도 있다. ' +
+      'WATER 와 SAND 가 가까이 오면 힘을 잃고, COAL 이 있으면 불길이 거세진다.',
     hint: '뜨겁고 위험하다',
     color: { fg: '#c2410c', bd: '#f0b18a' },
     anim: 'shake', fx: 'ember',
@@ -269,8 +314,8 @@ G.WORDS = [
   },
   {
     id: 'COAL', kind: '재료', tags: ['burnable'],
-    desc: '나무가 다 타고 남은 것. 그 자체로도 값이 나가고, FIRE 곁에 두면 불길이 훨씬 거세져 ' +
-      '주변이 크게 벌고 조리도 빨라진다. 다만 저도 결국은 타서 없어진다.',
+    desc: '까맣게 타고 남은 덩어리. 그 자체로도 값이 나가고, FIRE 곁에 두면 불길이 훨씬 거세져 ' +
+      '주변이 크게 벌고 굽는 것도 빨라진다. 다만 저도 결국은 타서 없어진다.',
     hint: '까맣게 타고 남은 것',
     color: { fg: '#3f3b38', bd: '#b0aaa4' },
     anim: 'still', fx: null,
@@ -279,21 +324,20 @@ G.WORDS = [
   {
     id: 'ROCK', kind: '사물', tags: ['heavy'],
     desc: '절대 움직이지 않고 불에도 타지 않는다. 벽처럼 세워 불길을 갈라놓을 수 있다. ' +
-      'RIVER 가 오래 깎으면 SAND 가 된다.',
+      'RIVER 한가운데 놓으면 물살이 갈라져 여울이 생기고, 떠내려가던 낱글자가 그 뒤에 걸려 모인다.',
     hint: '단단하다',
     color: { fg: '#5f5c57', bd: '#cbc7c0' },
     anim: 'still', fx: null,
-    motion: null, heavy: true,
-    bonds: [{ with: ['RIVER'], range: 104, time: 42, key: 'cook', into: 'SAND' }]
+    motion: null, heavy: true
   },
   {
     id: 'SAND', kind: '재료', tags: [],
-    desc: '그 자체로는 아무것도 하지 않는다. FIRE 에 오래 녹이면 GLASS 가 된다.',
+    desc: '타고 있는 것을 덮어 끈다. 물과 달리 몇 번이고 다시 쓸 수 있고, FIRE 곁에 두면 ' +
+      '불길이 번지는 것을 눌러 준다. 불을 다루는 자리에 미리 깔아 두는 것이다.',
     hint: '잘게 부서진 것',
     color: { fg: '#9a8a5c', bd: '#e2d5ac' },
     anim: 'still', fx: 'grit',
-    motion: { min: 34, max: 60, range: 34 },
-    bonds: [{ with: ['FIRE'], range: 100, time: 32, key: 'cook', into: 'GLASS' }]
+    motion: { min: 34, max: 60, range: 34 }
   },
   {
     id: 'GLASS', kind: '사물', tags: [],
@@ -312,7 +356,7 @@ G.WORDS = [
   {
     id: 'TREE', kind: '자연', tags: ['burnable', 'plant'],
     desc: '가끔 새로운 글자 하나를 떨어뜨린다. 물과 볕이 가까울수록 자주 떨어진다. ' +
-      '불에 잘 타지만, 다 타고 나면 COAL 이 남는다.',
+      '불에 아주 잘 타니 불 가까이 두지 않는 것이 좋다.',
     hint: '자란다',
     color: { fg: '#2f7a43', bd: '#a8d6b0' },
     anim: 'hop', fx: 'leaf',
@@ -322,7 +366,8 @@ G.WORDS = [
   },
   {
     id: 'SEED', kind: '자연', tags: ['burnable', 'plant'],
-    desc: '가만히 있다가 때가 되면 싹을 틔워 TREE 가 된다. 물과 볕이 가까우면 훨씬 빨리 자란다.',
+    desc: 'SUN 이나 물이 가까우면 천천히 싹이 튼다. 푸르게 오를수록 벌이가 늘고, ' +
+      '다 튼 싹은 그대로 남는다. 볕도 물도 없으면 그냥 씨앗인 채다.',
     hint: '심으면 자란다',
     color: { fg: '#5f7a34', bd: '#c6daa4' },
     anim: 'pulse', fx: null,
@@ -429,6 +474,16 @@ G.WORDS = [
     motion: null
   },
   {
+    id: 'GEAR', kind: '사물', tags: ['metal'],
+    desc: '혼자서는 아무 일도 하지 않는다. 다른 GEAR 와 이가 맞물릴 만큼 바짝 붙여 놓으면 ' +
+      '함께 돌기 시작하고, 맞물린 톱니 하나마다 제 벌이가 곱절로 뛴다. ' +
+      '스스로 움직이지 않으니 한번 짜 놓은 톱니바퀴는 흐트러지지 않는다.',
+    hint: '맞물려 돌아간다',
+    color: { fg: '#5c5750', bd: '#cbc5bb' },
+    anim: 'tick', fx: null,
+    motion: null, heavy: true
+  },
+  {
     id: 'TIME', kind: '개념', tags: [],
     desc: '주변의 위험이 쌓이는 속도를 크게 늦춘다. 화재를 막아 주는 안전지대이면서, ' +
       '느긋하게 익어야 하는 것들 — SEED · EGG · MILK — 은 오히려 빨리 여물게 한다.',
@@ -491,7 +546,8 @@ G.WORDS = [
   },
   {
     id: 'EGG', kind: '동물', tags: ['burnable'],
-    desc: '가만히 있다가 시간이 충분히 지나면 깨어나 BIRD 가 된다. TIME 이 가까우면 빨리 깬다.',
+    desc: 'NEST 나 BIRD 가 품어 주면 천천히 따뜻해진다. 다 품어진 알은 잘 벌고, ' +
+      '가끔 새 글자를 하나 내놓는다. 혼자 두면 식은 채 그대로다.',
     hint: '깨어난다',
     color: { fg: '#9a8560', bd: '#e2d7bd' },
     anim: 'still', fx: null,
@@ -533,19 +589,19 @@ G.WORDS = [
      ------------------------------------------------------------------ */
   {
     id: 'MEAT', kind: '재료', tags: ['burnable'],
-    desc: '그냥 두면 별것 아니지만 FIRE 곁에 두고 기다리면 ROAST 가 된다. ' +
+    desc: 'FIRE 곁에 두면 노릇하게 익어 간다. 다 익으면 빛깔이 변하고 벌이가 크게 오르며, ' +
+      '불에서 떼어 놓아도 익은 채로 남는다. 다 익은 뒤에도 불 위에 두면 타 버리니 제때 빼야 한다. ' +
       'CAT 과 DOG 이 냄새를 맡고 달려와 자리를 잡는다.',
     hint: '짐승이 좋아한다',
     color: { fg: '#98453f', bd: '#e4b3ae' },
     anim: 'still', fx: null,
     motion: { min: 40, max: 70, range: 30 },
-    flammable: true,
-    bonds: [{ with: ['FIRE'], range: 100, time: 24, key: 'cook', into: 'ROAST' }]
+    flammable: true
   },
   {
     id: 'ROAST', kind: '재료', tags: [],
-    desc: '노릇하게 익어 김이 오른다. 이 상태로는 한참 잘 벌지만 식으면서 값이 떨어지고, ' +
-      '결국 다시 MEAT 로 돌아간다. 불 옆에 그대로 두면 연기가 짙어지다 타 버리니 제때 빼내야 한다.',
+    desc: '처음부터 잘 익은 고기라 그냥 두어도 잘 번다. ' +
+      '불 옆에 그대로 두면 점점 검어지다 타 버리니 제때 빼내야 한다.',
     hint: '노릇하게 익었다',
     color: { fg: '#7a4412', bd: '#d9b184' },
     anim: 'pulse', fx: 'savory',
@@ -554,12 +610,11 @@ G.WORDS = [
   {
     id: 'MILK', kind: '사물', tags: [],
     desc: 'CAT 을 자리에 앉힌다. 곁에 있는 동안 고양이가 얌전히 잘 벌어 온다. ' +
-      'TIME 옆에 오래 두면 삭아서 CHEESE 가 된다.',
+      'TIME 옆에 오래 두면 꾸덕하게 삭아 벌이가 크게 오르고, 한번 삭으면 그대로 남는다.',
     hint: '하얗고 마신다',
     color: { fg: '#7d7a72', bd: '#dcd8cf' },
     anim: 'still', fx: null,
-    motion: null,
-    bonds: [{ with: ['TIME'], range: 96, time: 38, key: 'cook', into: 'CHEESE' }]
+    motion: null
   },
   {
     id: 'BONE', kind: '사물', tags: [],
@@ -642,7 +697,7 @@ G.WORDS = [
     id: 'SHOP', kind: '경제', tags: ['building', 'burnable'],
     desc: '보석을 사들인다. 값나가는 광물이나 보석을 만들어 가게 위에 잠깐만 올려 두면 ' +
       '그 자리에서 목돈으로 바꿔 준다. 글자가 길수록, 품질이 좋을수록 비싸다. ' +
-      '틈틈이 특가 동전도 내놓는다.',
+      '틈틈이 잔돈도 내놓지만 푼돈이니 큰 기대는 말자.',
     hint: '물건을 파는 곳',
     color: { fg: '#8a4a86', bd: '#dcb4da' },
     anim: 'still', fx: null,
@@ -683,6 +738,36 @@ G.WORDS.forEach(function (w) {
   G.WORD_BY_ID[w.id] = w;
   w.value = G.wordValue(w.id.length);
 });
+
+/* --------------------------------------------------------------------------
+   특별한 벌이
+   --------------------------------------------------------------------------
+   보통 단어는 20초마다 정해진 액수를 낸다. 아래 단어들은 그 줄을 보여 주면
+   거짓말이 된다 — 보석은 품질에 따라 값이 제각각이고 진짜 돈은 팔 때 들어오며,
+   DOG·CAR·LUCK 은 한 번씩 터지는 쪽이 훨씬 크고, BUG 은 벌기는커녕 훔쳐 간다.
+   그래서 더블클릭 팝오버에서는 액수 대신 이 한 줄로 벌이의 성격을 알려 준다.
+   -------------------------------------------------------------------------- */
+(function () {
+  var GEM = '가게에 넘길 때 목돈 · 잘 나온 것일수록 비싸다';
+  G.PAY_NOTE = {
+    GOLD: GEM, IRON: GEM, RUBY: GEM, EMERALD: GEM, DIAMOND: GEM,
+    SHOP: '보석을 사들이고, 틈틈이 잔돈을 흘린다',
+    BANK: '수입 일부를 맡아 두었다 이자와 함께 내준다',
+    DOG: '이따금 땅을 파서 한몫 물어 온다',
+    CAR: '길을 따라 배달을 다니며 번다',
+    LUCK: '이따금 횡재가 터진다',
+    STAR: '소원을 들어준다 — 목돈이나 도감 힌트',
+    GHOST: '제 벌이보다 올라탄 단어의 벌이를 부풀린다',
+    BUG: '버는 것보다 훔쳐 가는 쪽이 많다',
+    MOUSE: '버는 것보다 훔쳐 가는 쪽이 많다',
+    MEAT: '불에 익히면 벌이가 곱절이 된다 · 다 익으면 빼낼 것',
+    MILK: 'TIME 곁에서 삭히면 벌이가 곱절이 된다',
+    SEED: '볕과 물을 받아 싹이 트면 벌이가 곱절이 된다',
+    EGG: '품어 주면 벌이가 곱절이 되고 글자도 낳는다',
+    ROAST: '처음부터 익어 있어 그냥 두어도 잘 번다 · 불은 조심',
+    GEAR: '혼자면 제값 · 맞물린 톱니 하나마다 곱절로 뛴다'
+  };
+})();
 
 /** 능력이 없는 보통 단어의 정의 (한 단어당 하나만 만들어 재사용) */
 G.PLAIN_DEFS = {};

@@ -9,10 +9,12 @@ G.ui = (function () {
   var U = G.util, C = G.C;
 
   var elMoney, elMoneyVal, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
+    elBoardCount, elCountNum, elCountMax,
     elCodex, elCodexTab, elCodexList, elCodexCount, elCodexFoot, elChip, elToasts,
     elPauseVeil, elIdleVeil, elIntro, playEl, appEl;
 
   var lastMoneyShown = -1;
+  var lastCountShown = -1, lastMaxShown = -1;
   var chipEdge = null;
 
   function init() {
@@ -23,6 +25,9 @@ G.ui = (function () {
     elGauge = document.getElementById('gauge');
     elGaugeBar = document.querySelector('#gaugeBar i');
     elGaugeText = document.getElementById('gaugeText');
+    elBoardCount = document.getElementById('boardCount');
+    elCountNum = elBoardCount.querySelector('b');
+    elCountMax = elBoardCount.querySelector('span');
     elSpawnPop = document.getElementById('spawnPop');
     elWordPop = document.getElementById('wordPop');
     elCodex = document.getElementById('codex');
@@ -92,10 +97,17 @@ G.ui = (function () {
       ev.stopPropagation();
       if (confirm('보드를 모두 지우고 처음부터 다시 시작할까요?')) G.game.hardReset();
     });
-    elPauseVeil.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+    /* 카드 바깥의 어두운 곳을 누르면 그냥 이어서 한다 */
+    elPauseVeil.addEventListener('pointerdown', function (ev) {
+      ev.stopPropagation();
+      if (ev.target === elPauseVeil) G.game.setPaused(false);
+    });
 
     document.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Escape') { closePopovers(); toggleCodex(false); }
+      if (ev.key === 'Escape') {
+        if (G.game.paused) { G.game.setPaused(false); return; }
+        closePopovers(); toggleCodex(false);
+      }
       if (ev.key === ' ' && ev.target === document.body) {
         ev.preventDefault(); G.game.setPaused(!G.game.paused);
       }
@@ -113,11 +125,19 @@ G.ui = (function () {
       lastMoneyShown = m;
       elMoneyVal.textContent = U.num(m);
     }
+    var n = G.board.count(), max = G.maxEntities(), full = n >= max;
+    if (n !== lastCountShown || max !== lastMaxShown) {
+      lastCountShown = n; lastMaxShown = max;
+      elCountNum.textContent = n;
+      elCountMax.textContent = '/' + max;
+      elBoardCount.classList.toggle('full', full);
+    }
+
     var left = G.state.spawnTimer;
     var p = U.clamp(1 - left / G.game.spawnInterval(), 0, 1);
     elGaugeBar.style.width = (p * 100).toFixed(1) + '%';
-    elGaugeText.textContent = (G.board.count() >= C.MAX_ENTITIES)
-      ? '보드가 가득 찼다'
+    elGaugeText.textContent = full
+      ? '보드가 가득 찼다 — 넓히면 더 둘 수 있다'
       : '다음 글자 ' + U.secs(left);
     if (!elSpawnPop.classList.contains('hidden')) renderSpawnPop();
     if (chipEdge) updateChip();
@@ -209,8 +229,13 @@ G.ui = (function () {
 
     elWordPop.querySelector('.wp-name').textContent = word;
     elWordPop.querySelector('.wp-name').style.color = d.color.fg;
-    elWordPop.querySelector('.wp-pay').textContent =
-      C.PAY_PERIOD + '초마다 ' + U.money(d.value);
+
+    /* 특이한 방식으로 버는 단어는 액수 대신 벌이의 성격을 적는다.
+       보석에 "20초마다 8w" 를 띄우면 파는 값과 헷갈리기만 한다 */
+    var payEl = elWordPop.querySelector('.wp-pay');
+    var note = G.PAY_NOTE[d.id];
+    payEl.textContent = note || (C.PAY_PERIOD + '초마다 ' + U.money(d.value));
+    payEl.classList.toggle('note', !!note);
 
     var posEl = elWordPop.querySelector('.wp-pos');
     var baseEl = elWordPop.querySelector('.wp-base');
@@ -232,7 +257,11 @@ G.ui = (function () {
       }
       posEl.textContent = info.posKo;
       baseEl.textContent = info.base ? (info.base + ' 의 변화형') : '';
-      koEl.textContent = G.defs.koText(info);
+      /* 한글 자료가 없는 단어가 3분의 1쯤 된다. 그 자리를 비워 두면
+         화면이 고장난 것처럼 보이므로, 없다고 적어 두고 영어 뜻으로 넘긴다 */
+      var ko = G.defs.koText(info);
+      koEl.textContent = ko || '한글 뜻 없음';
+      koEl.classList.toggle('none', !ko);
       glossEl.textContent = info.gloss;
     });
 
@@ -259,7 +288,7 @@ G.ui = (function () {
      확장 칩
      ------------------------------------------------------------------ */
   var BAND = 52;      // 놀이영역 경계에서 이만큼 안/밖까지가 반응 범위
-  var CHIP_OFF = 27;  // 칩을 경계 바깥으로 이만큼 띄운다 (글자를 가리지 않게)
+  var CHIP_GAP = 12;  // 놀이영역 테두리와 칩 사이의 여백
 
   /** 보드(놀이영역) 가장자리 근처에서만 확장 칩을 보여준다 (드래그 중에는 방해하지 않는다) */
   function onPointerMove(ev) {
@@ -286,21 +315,32 @@ G.ui = (function () {
     if (best.d > BAND) { hideChip(); return; }
 
     chipEdge = best.e;
+    updateChip();       // 글자 수가 바뀌면 칩 폭도 바뀌므로 재기 전에 먼저 채운다
+
+    /* 칩은 반드시 놀이영역 **바깥**에 통째로 놓는다.
+       가운데 기준으로 놓이니 절반 너비만큼 더 밀어내야 테두리를 넘지 않는다.
+       고정값으로 밀면 좌우에서는 칩의 안쪽 절반이 판 위로 올라와
+       가장자리에 놓인 글자를 덮고 클릭까지 가로챈다. */
+    var hw = (elChip.offsetWidth || 96) / 2 + CHIP_GAP;
+    var hh = (elChip.offsetHeight || 30) / 2 + CHIP_GAP;
 
     var cx, cy;
-    if (best.e === 'top') { cx = x; cy = r.top - CHIP_OFF; }
-    else if (best.e === 'bottom') { cx = x; cy = r.bottom + CHIP_OFF; }
-    else if (best.e === 'left') { cx = r.left - CHIP_OFF; cy = y; }
-    else { cx = r.right + CHIP_OFF; cy = y; }
+    if (best.e === 'top') { cx = x; cy = r.top - hh; }
+    else if (best.e === 'bottom') { cx = x; cy = r.bottom + hh; }
+    else if (best.e === 'left') { cx = r.left - hw; cy = y; }
+    else { cx = r.right + hw; cy = y; }
 
-    /* 칩이 경계를 따라 움직이되 화면 밖으로는 나가지 않게 */
-    cx = U.clamp(cx, 56, window.innerWidth - 56);
-    cy = U.clamp(cy, 24, window.innerHeight - 24);
+    /* 화면 밖으로 나가지 않게 하되, 그러다 판 위로 되밀리지는 않게 */
+    cx = U.clamp(cx, hw, Math.max(hw, window.innerWidth - hw));
+    cy = U.clamp(cy, hh, Math.max(hh, window.innerHeight - hh));
+    if (best.e === 'top') cy = Math.min(cy, r.top - hh);
+    else if (best.e === 'bottom') cy = Math.max(cy, r.bottom + hh);
+    else if (best.e === 'left') cx = Math.min(cx, r.left - hw);
+    else cx = Math.max(cx, r.right + hw);
 
     elChip.style.left = Math.round(cx) + 'px';
     elChip.style.top = Math.round(cy) + 'px';
     elChip.classList.add('show');
-    updateChip();
   }
 
   function updateChip() {

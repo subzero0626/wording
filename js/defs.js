@@ -92,13 +92,59 @@ G.defs = (function () {
      조각을 걸러 내고, 품사에 맞는 것을 앞세워 둘까지만 보여 준다.
      ------------------------------------------------------------------ */
 
-  var JUNK_HEAD = /^(로|에게|에|의|을|를|이|가|와|과|으로)\s/;
+  /**
+   * 손으로 적어 둔 뜻.
+   * 자료가 아예 비어 있거나("의 3인칭"), 흔한 뜻 대신 엉뚱한 항목이 잡힌
+   * 짧은 단어들이다 — DOE 는 미국 에너지부, JAY 는 미국 외교관, WAS 는
+   * 워싱턴주로 들어와 있다. 세 글자 단어는 판마다 계속 만들게 되므로
+   * 여기만큼은 가장 흔한 뜻으로 적어 둔다.
+   */
+  var KO_FIX = {
+    ALE: '에일 맥주', ALP: '높은 산', AMP: '암페어, 앰프', ASP: '독사',
+    AWE: '경외, 경외감', AXE: '도끼', AYE: '찬성, 네', BYE: '작별 인사, 부전승',
+    CAD: '비열한 사람', CHI: '기(氣)', DEB: '사교계에 갓 나온 아가씨',
+    DIP: '살짝 담그다, 움푹한 곳', DOC: '의사', DOE: '암사슴',
+    EGO: '자아, 자존심', EKE: '근근이 이어 가다', EMU: '에뮤', EON: '아주 긴 세월',
+    ERR: '잘못하다', FLU: '독감', FOB: '시곗줄 주머니', GNU: '누',
+    GYM: '체육관', HAS: '가지고 있다', HER: '그녀의, 그녀를', HES: '그는',
+    IRE: '분노', JAY: '어치', KEN: '아는 범위', LAD: '사내아이',
+    LOB: '높이 띄워 던지다', LOO: '화장실', MAX: '최대', MED: '의학의',
+    MID: '한가운데의', MOP: '대걸레', OFT: '자주', OOH: '우와',
+    ORC: '범고래', PHI: '파이', PIC: '사진', POI: '포이',
+    POX: '발진, 마마', PSI: '프사이', QAT: '카트나무', RAJ: '인도 통치',
+    RID: '없애다', SAX: '색소폰', SEC: '초, 잠깐', SIS: '언니, 누나',
+    SOL: '솔, 태양', TAM: '베레모', TAO: '도(道)', TAU: '타우',
+    TEE: '티', TOG: '옷을 입히다', TOT: '꼬마', TUX: '턱시도',
+    UMP: '심판', VET: '수의사', VIM: '활력', WAS: '였다',
+    WEE: '아주 작은', WOK: '중화 냄비', YAW: '항로를 벗어나다', YEA: '찬성',
+    YEW: '주목나무', ZIG: '지그재그로 꺾다',
+    /* 복수형인데 자료가 엉뚱한 항목을 물고 있는 것들 */
+    ALES: '에일 맥주들', DOES: '암사슴들', ERRS: '잘못하다', TEES: '티들'
+  };
+
+  /* 표제어에 딸려 있던 조사가 앞에 남은 것 — "와 결혼하다" 의 "와 " */
+  var LEAD_JOSA = /^(에게|으로|와|과|로|에|의|을|를|이|가)\s+/;
   var JUNK_TAIL = /의\s?(뜻|고어체|부정형|단수|복수|약자|이형|변형)$/;
+  /* 뜻이 아니라 문법 설명인 조각 — 통째로 그것일 때만 걸러낸다
+     ("복수" 는 버리지만 "복수하다" 는 남겨야 한다) */
+  var GRAMMAR = /^(\d*인칭|준말|고어체|약자|이형|변형|부정형|비교급|최상급|과거|현재|복수|단수)(형|의)?$/;
+
+  /**
+   * 앞에 남은 조사를 떼어 낸다.
+   * 예전에는 조사로 시작하면 후보를 통째로 버렸는데, 그 바람에
+   * "와 결혼하다"(WED) · "로 간주하다"(DEEM) 처럼 멀쩡한 뜻까지 사라졌다.
+   */
+  function trim(s) {
+    s = (s || '').trim();
+    var m = LEAD_JOSA.exec(s);
+    if (m) s = s.slice(m[0].length).trim();
+    return s;
+  }
 
   /* 한 글자짜리도 버리면 안 된다 — 불 · 물 · 쥐 처럼 가장 흔한 뜻이 그렇다 */
   function usable(s) {
     if (!s || !/[가-힣]/.test(s)) return false;
-    return !JUNK_HEAD.test(s) && !JUNK_TAIL.test(s);
+    return !JUNK_TAIL.test(s) && !GRAMMAR.test(s);
   }
 
   function isVerb(s) { return /다$/.test(s); }
@@ -136,35 +182,73 @@ G.defs = (function () {
     }
 
     /* 복수형에는 "들" 을 붙인다.
-       원형이 이미 S 로 끝나면 이 S 는 복수 표시가 아니므로 건드리지 않고,
-       이름씨 꼴로 끝나는 후보에만 붙인다 (부사·형용사·감탄사는 제외). */
+       원형이 이미 S 로 끝나면 이 S 는 복수 표시가 아니므로 건드리지 않는다.
+       붙여서 어색해지는 쪽이 안 붙여서 밋밋한 쪽보다 훨씬 눈에 거슬리므로,
+       확실히 셀 수 있는 이름씨로 보일 때만 붙인다 —
+       조사나 어미로 끝나는 것("곁에", "통틀어")은 그대로 둔다. */
     if (/S$/.test(word) && !/S$/.test(base) &&
-      !isAdverb(s) && !isAdj(s) && /[가-힣]$/.test(s) && !/들$/.test(s)) {
+      !isAdverb(s) && !isAdj(s) && !/\s/.test(s) &&
+      /[가-힣]$/.test(s) && !/(들|에|로|서|와|과|만|도|의|를|을|여|써)$/.test(s)) {
       return s + '들';
     }
     return s;
   }
 
-  /** 팝오버에 보여줄 한글 뜻 */
-  function koText(info) {
-    if (!info || !info.ko) return '';
-    var parts = info.ko.split(','), keep = [], i, s;
+  /**
+   * 후보 목록에서 보여줄 둘을 고른다.
+   * @param raw  콤마로 이어진 후보들
+   * @param pos  품사 (어느 것을 앞세울지)
+   * @param word 화면에 뜰 단어 (변화형이면 모양을 맞춘다)
+   * @param base 원형. 비어 있으면 변화형이 아니다
+   */
+  function pick(raw, pos, word, base) {
+    if (!raw) return '';
+    var parts = raw.split(','), keep = [], i, s;
     for (i = 0; i < parts.length; i++) {
-      s = parts[i].trim();
-      if (usable(s)) keep.push(s);
+      s = trim(parts[i]);
+      if (usable(s) && keep.indexOf(s) < 0) keep.push(s);
     }
     if (!keep.length) return '';
 
-    keep.sort(function (a, b) { return fit(b, info.pos) - fit(a, info.pos); });
+    keep.sort(function (a, b) { return fit(b, pos) - fit(a, pos); });
 
     /* 변화형일 때만 모양을 바꾼다. SEED · FEED 처럼 원래 -ED 로 끝나는
-       단어까지 과거형으로 읽어 버리면 안 되기 때문이다. */
-    var out = [];
-    for (i = 0; i < keep.length && out.length < 2; i++) {
-      var t = info.base ? inflect(keep[i], info.word, info.base) : keep[i];
+       단어까지 과거형으로 읽어 버리면 안 되기 때문이다.
+       변화형은 하나만 보여 준다 — 활용이 어울리는 것은 대개 맨 앞 하나뿐이라
+       둘씩 늘어놓으면 ACTED 가 "출연한, 조" 처럼 엉킨다. */
+    var out = [], limit = base ? 1 : 2;
+    for (i = 0; i < keep.length && out.length < limit; i++) {
+      var t = base ? inflect(keep[i], word, base) : keep[i];
       if (out.indexOf(t) < 0) out.push(t);
     }
     return out.join(', ');
+  }
+
+  /** 팝오버에 보여줄 한글 뜻 */
+  function koText(info) {
+    if (!info) return '';
+    /* 손으로 적어 둔 것은 이미 제 모양이라 활용하지 않는다 */
+    if (KO_FIX[info.word]) return pick(KO_FIX[info.word], info.pos, info.word, '');
+
+    var out = pick(info.ko, info.pos, info.word, info.base);
+    if (out) return out;
+
+    /* 변화형인데 제 뜻이 비어 있으면 원형에서 끌어온다 (DUGS 는 비었지만 DUG 은 있다).
+       원형의 뜻을 이 단어의 모양에 맞춰 활용해 주므로 그대로 읽힌다. */
+    if (info.base && info.base !== info.word) {
+      var b = peek(info.base);
+      var raw = KO_FIX[info.base] || (b && b.ko);
+      if (raw) return pick(raw, (b && b.pos) || info.pos, info.word, info.base);
+    }
+
+    /* 손으로 적어 둔 단어의 복수형 (DEB → DEBS). 원형 칸이 비어 있는 항목이 많다.
+       어간을 함부로 깎으면 COOLY 를 COO 로 읽는 식의 헛짚음이 생기지만,
+       내가 뜻을 아는 단어의 -S 하나만은 안전하다. */
+    if (/S$/.test(info.word)) {
+      var stem = info.word.slice(0, -1);
+      if (KO_FIX[stem]) return pick(KO_FIX[stem], info.pos, info.word, stem);
+    }
+    return '';
   }
 
   return {
