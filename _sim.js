@@ -1,47 +1,8 @@
+/* 동작 검증 — 상호작용이 설명대로 움직이는지 하나씩 확인한다.
+   진행 속도(값 곡선)는 _pace.js 쪽에서 따로 잰다. */
 'use strict';
-const fs = require('fs'), vm = require('vm');
-function makeEl(tag) {
-  const cls = new Set(), hs = {};
-  const el = {
-    tagName: (tag || 'div').toUpperCase(),
-    style: new Proxy({ setProperty(k, v) { this['--' + k.replace(/^--/, '')] = v; } }, { get: (t, k) => t[k] || '', set: (t, k, v) => (t[k] = v, true) }),
-    children: [], parentNode: null, dataset: {}, textContent: '', innerHTML: '',
-    classList: { add: (...c) => c.forEach(x => cls.add(x)), remove: (...c) => c.forEach(x => cls.delete(x)), toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), contains: c => cls.has(c) },
-    appendChild(c) { c.parentNode = el; el.children.push(c); return c; },
-    removeChild(c) { const i = el.children.indexOf(c); if (i >= 0) el.children.splice(i, 1); return c; },
-    addEventListener(k, f) { (hs[k] || (hs[k] = [])).push(f); }, removeEventListener() {},
-    setAttribute() {}, getAttribute: () => null,
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 700 }),
-    getContext: () => ctx, querySelector: () => null, querySelectorAll: () => [],
-    focus() {}, blur() {}, click() {}, get offsetWidth() { return 60; }, get offsetHeight() { return 40; },
-    clientWidth: 1200, clientHeight: 800, scrollTop: 0, scrollHeight: 0
-  };
-  Object.defineProperty(el, 'className', { get: () => [...cls].join(' '), set: v => { cls.clear(); String(v).split(/\s+/).filter(Boolean).forEach(c => cls.add(c)); } });
-  return el;
-}
-const ctx = new Proxy({}, { get: () => () => {} });
-const byId = {};
-const document = { body: makeEl('body'), head: makeEl('head'), documentElement: makeEl('html'), hidden: false, createElement: makeEl, getElementById: id => byId[id] || (byId[id] = makeEl('div')), querySelector: () => makeEl('div'), querySelectorAll: () => [], addEventListener() {}, removeEventListener() {} };
-const store = {};
-const S = {
-  console, Math, JSON, Date, String, Number, Boolean, Object, Array, RegExp, Error, Infinity, parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
-  setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {}, requestAnimationFrame: () => 0, cancelAnimationFrame: () => {}, document,
-  localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } },
-  navigator: { userAgent: 'node' }, performance: { now: () => Date.now() }, innerWidth: 1200, innerHeight: 800, devicePixelRatio: 1,
-  addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addListener() {} })
-};
-S.window = S; S.globalThis = S; vm.createContext(S);
-for (const f of ['js/util.js', 'js/dict.js', 'js/defs.js', 'js/data.js', 'js/fx.js', 'js/entity.js', 'js/board.js', 'js/drag.js', 'js/behaviors.js', 'js/ui.js', 'js/save.js', 'js/game.js']) {
-  vm.runInContext(fs.readFileSync(f, 'utf8'), S, { filename: f });
-}
-const G = S.G, C = S.G.C;
-G.game.init();
-const log = [];
-G.ui.floatMoney = () => {};
-G.ui.toast = m => log.push(m.replace(/<[^>]+>/g, ''));
-G.board.layout(1000, 660);
-const DT = 1 / 30;
-const clear = () => { for (const e of G.board.all().slice()) G.board.remove(e); log.length = 0; };
+const fs = require('fs');
+const { G, C, DT, log, clear } = require('./_head.js');
 
 /* 1 ─ 가까이의 기준 -------------------------------------------------- */
 clear();
