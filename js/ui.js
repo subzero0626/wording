@@ -9,9 +9,9 @@ G.ui = (function () {
   var U = G.util, C = G.C;
 
   var elMoney, elMoneyVal, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
-    elBoardCount, elCountNum, elCountMax,
-    elCodex, elCodexTab, elCodexList, elCodexCount, elCodexFoot, elChip, elToasts,
-    elPauseVeil, elIdleVeil, elIntro, playEl, appEl;
+    elBoardCount, elCountNum, elCountMax, elTicketPop, elTicketBuys,
+    elCodex, elCodexTab, elCodexList, elCodexCount, elCodexTickets, elCodexFoot,
+    elChip, elToasts, elPauseVeil, elIdleVeil, elIntro, playEl, appEl;
 
   var lastMoneyShown = -1;
   var lastCountShown = -1, lastMaxShown = -1;
@@ -34,7 +34,10 @@ G.ui = (function () {
     elCodexTab = document.getElementById('codexTab');
     elCodexList = document.getElementById('codexList');
     elCodexCount = document.getElementById('codexCount');
+    elCodexTickets = document.getElementById('codexTickets');
     elCodexFoot = document.querySelector('#codex footer');
+    elTicketPop = document.getElementById('ticketPop');
+    elTicketBuys = elTicketPop.querySelector('.tk-buys');
     elChip = document.getElementById('expandChip');
     elToasts = document.getElementById('toasts');
     elPauseVeil = document.getElementById('pauseVeil');
@@ -51,11 +54,21 @@ G.ui = (function () {
       ev.stopPropagation();
       if (G.game.buySpawnUpgrade()) { renderSpawnPop(); }
     });
+    /* --- 재화를 누르면 그 아래에 힌트권 구매창 --- */
+    elMoney.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (elTicketPop.classList.contains('hidden')) openTicketPop();
+      else closePopovers();
+    });
+    buildTicketButtons();
+
     /* 팝오버 내부 조작이 "바깥 클릭"으로 오해받지 않도록 pointerdown 을 막는다 */
     ['pointerdown', 'click'].forEach(function (t) {
       elSpawnPop.addEventListener(t, function (ev) { ev.stopPropagation(); });
       elWordPop.addEventListener(t, function (ev) { ev.stopPropagation(); });
       elGauge.addEventListener(t, function (ev) { ev.stopPropagation(); });
+      elMoney.addEventListener(t, function (ev) { ev.stopPropagation(); });
+      elTicketPop.addEventListener(t, function (ev) { ev.stopPropagation(); });
     });
     document.addEventListener('pointerdown', function () { closePopovers(); });
 
@@ -135,15 +148,12 @@ G.ui = (function () {
 
     var left = G.state.spawnTimer;
     var p = U.clamp(1 - left / G.game.spawnInterval(), 0, 1);
-    var held = full && left <= 0;      // 다 세어 놓고 자리가 나기만 기다리는 중
     elGaugeBar.style.width = (p * 100).toFixed(1) + '%';
-    elGauge.classList.toggle('held', held);
-    elGaugeText.textContent = held
-      ? '자리가 없다 — 한 칸만 비면 바로 나온다'
-      : full
-        ? '보드가 가득 찼다 — 넓히면 더 둘 수 있다'
-        : '다음 글자 ' + U.secs(left);
+    elGaugeText.textContent = full
+      ? '보드가 가득 찼다 — 넓히면 더 둘 수 있다'
+      : '다음 글자 ' + U.secs(left);
     if (!elSpawnPop.classList.contains('hidden')) renderSpawnPop();
+    if (!elTicketPop.classList.contains('hidden')) renderTicketPop();
     if (chipEdge) updateChip();
   }
 
@@ -225,6 +235,51 @@ G.ui = (function () {
     }
   }
 
+  /* ------------------------------------------------------------------
+     힌트권 구매창
+     ------------------------------------------------------------------ */
+  function buildTicketButtons() {
+    var html = '';
+    for (var i = 0; i < C.TICKET_PACKS.length; i++) {
+      html += '<button class="tk-b" data-n="' + C.TICKET_PACKS[i] + '">' +
+        '<b>' + C.TICKET_PACKS[i] + '장</b><span></span></button>';
+    }
+    elTicketBuys.innerHTML = html;
+    var bs = elTicketBuys.querySelectorAll('.tk-b');
+    for (var k = 0; k < bs.length; k++) {
+      bs[k].addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        buyTickets(+this.dataset.n);
+      });
+    }
+  }
+
+  function openTicketPop() {
+    closePopovers();
+    elTicketPop.classList.remove('hidden');
+    renderTicketPop();
+  }
+
+  function renderTicketPop() {
+    elTicketPop.querySelector('.tk-have').textContent = G.state.tickets + '장';
+    elTicketPop.querySelector('.tk-next b').textContent = U.money(G.ticketPrice());
+    var bs = elTicketBuys.querySelectorAll('.tk-b');
+    for (var i = 0; i < bs.length; i++) {
+      var n = +bs[i].dataset.n, cost = G.ticketPack(n);
+      bs[i].querySelector('span').textContent = U.money(cost);
+      bs[i].disabled = G.state.money < cost;
+    }
+  }
+
+  function buyTickets(n) {
+    var cost = G.ticketPack(n);
+    if (!G.board.spend(cost)) { toast('돈이 부족하다'); return; }
+    G.state.tickets += n;
+    G.state.ticketsBought += n;
+    renderTicketPop();
+    renderCodex();
+  }
+
   /** 단어를 더블클릭하면 그 단어의 뜻을 보여준다 */
   function showWordPop(ent, cx, cy) {
     closePopovers();
@@ -286,6 +341,7 @@ G.ui = (function () {
   function closePopovers() {
     elSpawnPop.classList.add('hidden');
     elWordPop.classList.add('hidden');
+    elTicketPop.classList.add('hidden');
   }
 
   /* ------------------------------------------------------------------
@@ -445,7 +501,10 @@ G.ui = (function () {
       var got = G.TEST_UNLOCK_ALL || !!G.state.discovered[w.id];
       if (got) found++;
       var hint = G.state.hints[w.id] || 0;
-      html += '<div class="cx' + (got ? '' : ' locked') + '">';
+      /* 잠긴 칸은 칸 자체가 버튼이다 — 누르면 다음 단계가 바로 열린다 */
+      var open = !got && G.hintTickets(hint) > 0;
+      html += '<div class="cx' + (got ? '' : ' locked') + (open ? ' askable' : '') +
+        (open ? '" data-w="' + w.id : '') + '">';
       html += '<div class="dot" style="--c:' + (got ? w.color.fg : '') + '"></div>';
       html += '<div class="mid">';
       if (got) {
@@ -453,17 +512,17 @@ G.ui = (function () {
         html += '<div class="k">' + w.kind + '</div>';
         html += '<div class="d">' + maskUnknown(w.desc) + '</div>';
       } else {
+        /* 3단계에서는 앞에서부터 여러 글자가, 1단계에서는 첫 글자만 드러난다 */
+        var shown = hint >= 3 ? G.hintReveal(w.id.length) : (hint >= 1 ? 1 : 0);
         var mask = '';
-        for (var i = 0; i < w.id.length; i++) {
-          mask += (hint >= 1 && i === 0) ? w.id[0] : '?';
-        }
+        for (var i = 0; i < w.id.length; i++) mask += i < shown ? w.id[i] : '?';
         html += '<div class="n">' + mask + '</div>';
         html += '<div class="k">' + (hint >= 1 ? w.kind : w.id.length + ' 글자') + '</div>';
         if (hint >= 2) html += '<div class="d">' + maskUnknown(w.hint) + '</div>';
-        var lv = hint;
-        if (lv < 2) {
-          html += '<button class="hintbtn" data-w="' + w.id + '">힌트 ' +
-            U.money(G.hintCost(lv)) + '</button>';
+        var need = G.hintTickets(hint);
+        if (need) {
+          html += '<div class="ask' + (G.state.tickets >= need ? '' : ' poor') + '">힌트권 ' +
+            need + '장</div>';
         }
       }
       html += '</div></div>';
@@ -476,20 +535,28 @@ G.ui = (function () {
       ? '그 밖에 만들어 본 단어 <b>' + made + '</b>개 · 사전에 있는 단어라면 무엇이든 만들 수 있다'
       : '보드에서 글자를 끌어다 붙이면 단어가 됩니다.';
 
-    var btns = elCodexList.querySelectorAll('.hintbtn');
-    for (var b = 0; b < btns.length; b++) {
-      btns[b].addEventListener('click', function (ev) {
+    elCodexTickets.textContent = '힌트권 ' + G.state.tickets + '장';
+
+    var rows = elCodexList.querySelectorAll('.askable');
+    for (var b = 0; b < rows.length; b++) {
+      rows[b].addEventListener('click', function (ev) {
         ev.stopPropagation();
-        buyHint(this.dataset.w);
+        spendHint(this.dataset.w);
       });
     }
   }
 
-  function buyHint(id) {
+  /** 도감 칸을 누르면 다음 단계가 바로 열린다 — 확인 절차를 두지 않는다 */
+  function spendHint(id) {
     var lv = G.state.hints[id] || 0;
-    if (lv >= 2) return;
-    var cost = G.hintCost(lv);
-    if (!G.board.spend(cost)) { toast('돈이 부족하다'); return; }
+    var need = G.hintTickets(lv);
+    if (!need) return;
+    if (G.state.tickets < need) {
+      toast('힌트권이 ' + (need - G.state.tickets) + '장 모자라다');
+      openTicketPop();
+      return;
+    }
+    G.state.tickets -= need;
     G.state.hints[id] = lv + 1;
     renderCodex();
   }

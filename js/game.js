@@ -193,7 +193,7 @@ G.game = (function () {
     if (kind === 'ability') {
       if (!G.state.discovered[id]) {
         G.state.discovered[id] = true;
-        G.state.hints[id] = 2;
+        G.state.hints[id] = G.HINT_MAX;
         G.ui.renderCodex();
         G.ui.toast('능력을 가진 단어 <b>' + id + '</b> 발견');
         var n = Object.keys(G.state.discovered).length;
@@ -221,10 +221,10 @@ G.game = (function () {
     }
   }
 
-  /** BOOK / LUCK 이 주는 무료 힌트 */
+  /** BOOK / LUCK 이 주는 무료 힌트 — 힌트권 없이 한 단계를 열어 준다 */
   function freeHint() {
     var pool = G.WORDS.filter(function (w) {
-      return !G.state.discovered[w.id] && (G.state.hints[w.id] || 0) < 2;
+      return !G.state.discovered[w.id] && (G.state.hints[w.id] || 0) < G.HINT_MAX;
     });
     if (!pool.length) return false;
     var w = U.pick(pool);

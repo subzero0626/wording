@@ -334,11 +334,6 @@ button{
 }
 #gauge.pulse #gaugeBar i{ background:linear-gradient(90deg,#4f9a72,#2f7d55); }
 #gauge.pulse #gaugeText{ color:var(--money); }
-/* 정원이 차서 게이지가 가득 찬 채로 멈춰 있을 때.
-   가만히 있으면 고장난 것처럼 보이니 숨만 쉬게 해 둔다 */
-#gauge.held #gaugeBar i{ background:linear-gradient(90deg,#c9a15c,#b4544a); animation:gaugeHeld 1.8s ease-in-out infinite; }
-#gauge.held #gaugeText{ color:#b4544a; }
-@keyframes gaugeHeld{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
 #gaugeText{
   margin-top:6px; font-size:11.5px; color:var(--ink-3);
   letter-spacing:.02em; font-variant-numeric:tabular-nums;
@@ -427,6 +422,33 @@ button{
 .pop button:hover{ opacity:.88; }
 .pop button:active{ transform:scale(.98); }
 .pop button:disabled{ background:#d9d5cd; color:#8e8a83; cursor:default; }
+
+/* 힌트권 구매창 — 재화 바로 아래에 매단다 */
+#ticketPop{ right:14px; top:56px; min-width:212px; }
+#ticketPop .tk-head{ display:flex; align-items:baseline; gap:8px; }
+#ticketPop .tk-t{ font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.03em; }
+#ticketPop .tk-have{
+  margin-left:auto; font-size:13px; font-weight:750; color:var(--money);
+  font-variant-numeric:tabular-nums;
+}
+#ticketPop .tk-note{ margin-top:5px; font-size:10.5px; color:var(--ink-3); line-height:1.5; }
+#ticketPop .tk-buys{ display:flex; gap:6px; margin:11px 0 9px; }
+#ticketPop .tk-b{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+  padding:8px 0 7px; border-radius:9px;
+  background:var(--accent); color:#fff;
+}
+#ticketPop .tk-b b{ font-size:12.5px; font-weight:700; }
+#ticketPop .tk-b span{ font-size:10px; opacity:.82; font-variant-numeric:tabular-nums; }
+#ticketPop .tk-b:disabled{ background:#d9d5cd; color:#8e8a83; }
+#ticketPop .tk-b:disabled span{ opacity:1; }
+#ticketPop .tk-next{
+  font-size:10.5px; color:var(--ink-3); text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+#ticketPop .tk-next b{ color:var(--ink-2); font-weight:650; }
+
+#money{ cursor:pointer; }
 
 #wordPop{ min-width:220px; max-width:280px; }
 #wordPop .wp-head{ display:flex; align-items:baseline; gap:7px; }
@@ -528,14 +550,23 @@ button{
 .cx .d .q{ font-style:normal; color:var(--ink-3); letter-spacing:.12em; }
 .cx.locked .n{ color:var(--ink-3); font-weight:600; letter-spacing:.14em; }
 .cx.locked .dot{ background:#e4e0d9; }
-.cx .hintbtn{
-  margin-top:5px; font-size:10.5px; color:var(--ink-2);
-  border:1px solid var(--line-2); border-radius:6px; padding:2px 7px;
-  background:#fff;
+/* 잠긴 칸은 칸 자체가 버튼이다. 따로 버튼을 두면 좁은 도감이 더 좁아지고,
+   누를 곳을 한 번 더 겨냥해야 한다. 값만 조용히 적어 둔다. */
+.cx.askable{ cursor:pointer; }
+.cx.askable:hover{ background:rgba(60,110,90,.07); }
+.cx.askable:active{ background:rgba(60,110,90,.12); }
+.cx .ask{
+  margin-top:4px; font-size:10.5px; letter-spacing:.02em;
+  color:var(--money); font-variant-numeric:tabular-nums;
 }
-.cx .hintbtn:hover{ border-color:var(--ink-3); }
-.cx .hintbtn:disabled{ opacity:.4; cursor:default; }
+.cx .ask.poor{ color:var(--ink-3); }
 .cx .mid{ flex:1; min-width:0; }
+
+#codexTickets{
+  margin-left:auto; font-size:10.5px; color:var(--ink-3);
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+#codexClose{ margin-left:10px; }
 
 /* --------------------------------------------------------------------------
    일시정지 / 토스트 / 인트로

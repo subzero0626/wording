@@ -24,6 +24,8 @@ G.save = (function () {
       discovered: {},
       madeWords: {},
       hints: {},
+      tickets: 0,            // 손에 든 힌트권
+      ticketsBought: 0,      // 지금까지 산 총 장수 — 다음 장 값이 여기서 나온다
       opt: { fx: true, snapHint: true },
       introDone: false,
       lastTime: Date.now()

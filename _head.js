@@ -6,7 +6,7 @@ const fs = require('fs'), vm = require('vm');
 const ctx = new Proxy({}, { get: () => () => {} });
 
 function makeEl(tag) {
-  const cls = new Set(), hs = {};
+  const cls = new Set(), hs = {}, sub = {};
   const el = {
     tagName: (tag || 'div').toUpperCase(),
     style: new Proxy({ setProperty(k, v) { this['--' + k.replace(/^--/, '')] = v; } },
@@ -23,7 +23,11 @@ function makeEl(tag) {
     addEventListener(k, f) { (hs[k] || (hs[k] = [])).push(f); }, removeEventListener() {},
     setAttribute() {}, getAttribute: () => null,
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 700 }),
-    getContext: () => ctx, querySelector: () => null, querySelectorAll: () => [],
+    /* 선택자마다 같은 가짜 자식을 돌려준다. null 을 주면 ui.js 의
+       elMoneyVal 같은 것들이 전부 null 이 되어 init 이 그 자리에서 죽는다 */
+    getContext: () => ctx,
+    querySelector(sel) { return sub[sel] || (sub[sel] = makeEl('div')); },
+    querySelectorAll: () => [],
     focus() {}, blur() {}, click() {},
     get offsetWidth() { return 60; }, get offsetHeight() { return 40; },
     clientWidth: 1200, clientHeight: 800, scrollTop: 0, scrollHeight: 0

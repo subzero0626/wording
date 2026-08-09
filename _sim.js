@@ -282,6 +282,41 @@ console.log('  0단계에서 40번 만들어 보면: ' + G.board.count() + '개�
     (G.board.count() > before ? ' (바로 나왔다)' : ' (안 나왔다 — 버그)'));
 }
 
+/* 3.6 ─ 힌트권 ---------------------------------------------------------- */
+console.log('\n\n힌트권\n');
+{
+  console.log('  산 장수   다음 한 장   ' +
+    C.TICKET_PACKS.map(n => (n + '장').padStart(9)).join(''));
+  for (const b of [0, 10, 50, 100]) {
+    console.log('  ' + String(b).padStart(6) + '   ' + (G.ticketPrice(b) + 'w').padStart(9) +
+      '   ' + C.TICKET_PACKS.map(n => (G.ticketPack(n, b).toLocaleString() + 'w').padStart(9)).join(''));
+  }
+
+  /* 묶음값이 한 장씩 사는 것과 어긋나면 어느 한쪽이 이득이 되어 버린다 */
+  let ok = true;
+  for (const n of C.TICKET_PACKS) {
+    let one = 0;
+    for (let i = 0; i < n; i++) one += G.ticketPrice(30 + i);
+    if (one !== G.ticketPack(n, 30)) ok = false;
+  }
+  console.log('  묶음값 = 한 장씩 산 값의 합 ' + (ok ? '· 맞다' : '· 어긋난다 — 버그'));
+
+  const per = C.HINT_TICKETS.reduce((a, b) => a + b, 0);
+  let first = 0;
+  for (let i = 0; i < per; i++) first += G.ticketPrice(i);
+  let all = 0;
+  for (let i = 0; i < per * G.WORDS.length; i++) all += G.ticketPrice(i);
+  const up = C.SPAWN_COSTS.concat(C.EXPAND_COSTS).reduce((a, b) => a + b, 0);
+  console.log('  한 단어를 끝까지 (' + C.HINT_TICKETS.join('+') + '=' + per + '장) ' +
+    first.toLocaleString() + 'w');
+  console.log('  51개를 전부 힌트로만        ' + all.toLocaleString() + 'w' +
+    '  (업그레이드 전부 ' + up.toLocaleString() + 'w)');
+
+  console.log('\n  3단계에서 드러나는 철자');
+  console.log('    ' + ['SUN', 'FIRE', 'DIAMOND'].map(id =>
+    id + ' → ' + [...id].map((c, i) => i < G.hintReveal(id.length) ? c : '?').join('')).join(' · '));
+}
+
 /* 3.7 ─ 능력 단어가 보통 단어보다 얼마나 더 버는가 ---------------------- */
 console.log('\n\n능력 단어의 벌이 (보통 단어 = 1.0)\n');
 

@@ -63,11 +63,18 @@ G.C = {
      한 단계에 네 개씩 고르게 늘린다 */
   BOARD_MAX: [20, 24, 28, 32, 36, 40, 44],
 
-  /* --- 도감 힌트 (1단계: 첫 글자+분류, 2단계: 짧은 설명) ---
-     아래는 첫 힌트 값이고, 많이 살수록 HINT_STEP 만큼 비싸진다 */
-  HINT_COSTS: [60, 260],
-  HINT_STEP: 1.05,
-  HINT_STEP_CAP: 9,
+  /* --- 힌트권 ---
+     힌트는 재화로 직접 사지 않는다. 먼저 힌트권을 사 두고 도감에서 장수로 낸다.
+     값은 한 장 살 때마다 TICKET_STEP 만큼 꼬박꼬박 오른다. 지수로 올리면
+     후반에 손댈 수 없이 비싸지고, 안 올리면 남는 돈으로 도감을 통째로 사 버린다.
+     사이에 한 겹을 두면 "지금 한 장을 어디에 쓸까" 를 고민하게 된다. */
+  TICKET_BASE: 100,
+  TICKET_STEP: 20,
+  TICKET_PACKS: [1, 5, 10],    // 구매창에서 한 번에 집을 수 있는 묶음
+
+  /* 도감 힌트 단계별로 내야 하는 장수
+     1장: 첫 글자 + 분류 / 3장: 짧은 설명 / 5장: 철자 대부분 */
+  HINT_TICKETS: [1, 3, 5],
 
   OFFLINE_CAP: 7200,     // 오프라인 수입 인정 최대 초 (2시간)
   OFFLINE_RATE: 0.1,     // 그동안 벌었을 액수의 이 비율만 준다
@@ -150,15 +157,28 @@ G.maxEntities = function () {
  *   3글자 4 · 4글자 8 · 5글자 16 · 6글자 32 · 7글자 64 · 8글자 128
  * 능력 단어도 보통 단어와 똑같은 값을 받는다. 능력은 벌이가 아니라 행동으로 드러낸다.
  */
-/**
- * 힌트 값. 처음 몇 개는 싸게 풀어 주지만, 도감을 힌트로만 밀어붙이면 가파르게 비싸진다.
- * 값은 지금까지 산 힌트 총 개수를 따라간다 — 후반에 남아도는 재화를 흡수하는 자리.
- */
-G.hintCost = function (lv) {
-  var bought = 0, h = G.state && G.state.hints;
-  for (var k in h) bought += h[k];
-  var step = Math.min(G.C.HINT_STEP_CAP, Math.pow(G.C.HINT_STEP, bought));
-  return Math.round(G.C.HINT_COSTS[lv] * step);
+/** 다음 한 장의 값. 지금까지 산 총 장수를 따라 꼬박꼬박 오른다 */
+G.ticketPrice = function (bought) {
+  if (bought === undefined) bought = (G.state && G.state.ticketsBought) || 0;
+  return G.C.TICKET_BASE + G.C.TICKET_STEP * bought;
+};
+
+/** n 장을 한꺼번에 살 때의 값 (값이 오르는 중이므로 그냥 곱하면 안 된다) */
+G.ticketPack = function (n, bought) {
+  if (bought === undefined) bought = (G.state && G.state.ticketsBought) || 0;
+  return n * G.C.TICKET_BASE + G.C.TICKET_STEP * (n * bought + n * (n - 1) / 2);
+};
+
+/** 힌트 단계 lv(0부터) 를 열려면 내야 하는 힌트권 장수. 다 열었으면 0 */
+G.hintTickets = function (lv) {
+  return lv < G.C.HINT_TICKETS.length ? G.C.HINT_TICKETS[lv] : 0;
+};
+
+G.HINT_MAX = G.C.HINT_TICKETS.length;
+
+/** 힌트 3단계에서 드러내는 철자 수 — 끝 한두 글자는 남겨 둔다 */
+G.hintReveal = function (len) {
+  return Math.max(1, Math.min(len - 1, Math.ceil(len * 0.6)));
 };
 
 G.wordValue = function (len, mult) {
