@@ -356,7 +356,7 @@ button{
 
 /* STAR 가 떨군 힌트권 — 길쭉하고 작게, 회색, 약 30° 기울임 */
 .token.ticket{
-  width:36px; height:12px; border-radius:0;
+  width:30px; height:12px; border-radius:0;
   background:transparent; border:none; box-shadow:none;
   color:#6e6a64;
   transform:rotate(-30deg);
@@ -367,7 +367,7 @@ button{
   to{ transform:rotate(-30deg); opacity:1; }
 }
 .token.ticket:hover{ transform:scale(1.12) rotate(-30deg); }
-.token.ticket svg{ width:36px; height:12px; display:block; overflow:visible; }
+.token.ticket svg{ width:30px; height:12px; display:block; overflow:visible; }
 .token.ticket .tk-face{
   fill:#e6e4df; stroke:#9a968e; stroke-width:1.3;
 }

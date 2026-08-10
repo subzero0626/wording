@@ -77,9 +77,9 @@ G.tokens = (function () {
 
   /* 힌트권 — 길쭉한 직사각형 + 가운데 구멍, 살짝 기울어 둔다 */
   var ICON =
-    '<svg viewBox="0 0 52 18" aria-hidden="true">' +
-    '<rect class="tk-face" x="1" y="1.2" width="50" height="15.6" rx="2.8"/>' +
-    '<circle class="tk-hole" cx="26" cy="9" r="4.2"/></svg>';
+    '<svg viewBox="0 0 44 18" aria-hidden="true">' +
+    '<rect class="tk-face" x="1" y="1.2" width="42" height="15.6" rx="2.8"/>' +
+    '<circle class="tk-hole" cx="22" cy="9" r="4.2"/></svg>';
 
   /* 동전 — 테두리와 가운데 홈 */
   var COIN =
@@ -93,7 +93,7 @@ G.tokens = (function () {
     var el = document.createElement('div');
     el.className = 'token ' + cls;
     el.innerHTML = html;
-    var hw = cls === 'ticket' ? 18 : 17;
+    var hw = cls === 'ticket' ? 15 : 17;
     var hh = cls === 'ticket' ? 14 : 17;
     el.style.left = (x - hw) + 'px';
     el.style.top = (y - hh) + 'px';
