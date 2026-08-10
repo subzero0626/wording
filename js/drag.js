@@ -556,6 +556,7 @@ G.drag = (function () {
       var big = kind === 'ability';
       G.fx.burst(cx, cy, col, big ? 24 : 12, big ? 120 : 70);
       G.fx.ring(cx, cy, { r0: 6, r1: big ? 78 : 52, life: .6, c: col, lw: big ? 2 : 1.2 });
+      G.sfx.word();
       G.game.onWordFormed(ne, false, kind);
     } else {
       ne = new G.Entity('cluster', text, cx, cy);
@@ -563,6 +564,7 @@ G.drag = (function () {
       ne.x = p.x; ne.y = p.y;
       G.board.add(ne);
       G.fx.spark(cx, cy, { vx: 0, vy: -14, r: 2, life: .4, c: '160,155,148', a: .6 });
+      G.sfx.merge();
     }
     ne.land();
     return ne;

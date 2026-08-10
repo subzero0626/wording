@@ -27,6 +27,7 @@ G.game = (function () {
       }
       if (!G.state.opt) G.state.opt = { fx: true, snapHint: true };
       if (G.state.opt.fx === undefined) G.state.opt.fx = true;
+      if (G.state.opt.sfx === undefined) G.state.opt.sfx = true;
       if (G.state.opt.snapHint === undefined) G.state.opt.snapHint = true;
       /* WALL → ROCK 이름만 바뀜 — 발견한 기록도 이어받는다 */
       if (G.state.discovered && G.state.discovered.WALL) {
@@ -50,6 +51,7 @@ G.game = (function () {
     G.ui.init();
     G.ui.syncOptions();
     G.fx.setEnabled(G.state.opt.fx);
+    G.sfx.setEnabled(G.state.opt.sfx !== false);
 
     if (saved && saved.ents && saved.ents.length) {
       G.save.restoreEntities(saved.ents);
@@ -77,6 +79,7 @@ G.game = (function () {
     for (var a = 0; a < acts.length; a++) {
       window.addEventListener(acts[a], onActivity, { passive: true });
     }
+    window.addEventListener('pointerdown', function () { G.sfx.unlock(); }, { once: true, capture: true });
 
     running = true;
     last = performance.now();

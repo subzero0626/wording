@@ -114,6 +114,11 @@ G.ui = (function () {
       G.state.opt.fx = this.checked;
       G.fx.setEnabled(this.checked);
     });
+    document.getElementById('optSfx').addEventListener('change', function () {
+      G.state.opt.sfx = this.checked;
+      G.sfx.setEnabled(this.checked);
+      if (this.checked) { G.sfx.unlock(); G.sfx.merge(); }
+    });
     document.getElementById('optSnapHint').addEventListener('change', function () {
       G.state.opt.snapHint = this.checked;
     });
@@ -766,6 +771,7 @@ G.ui = (function () {
 
   function syncOptions() {
     document.getElementById('optFx').checked = G.state.opt.fx;
+    document.getElementById('optSfx').checked = G.state.opt.sfx !== false;
     document.getElementById('optSnapHint').checked = G.state.opt.snapHint;
   }
 
