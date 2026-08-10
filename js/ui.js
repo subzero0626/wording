@@ -92,7 +92,14 @@ G.ui = (function () {
     document.getElementById('codexClose').addEventListener('click', function (ev) {
       ev.stopPropagation(); toggleCodex(false);
     });
-    elCodex.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+    elCodex.addEventListener('pointerdown', function (ev) {
+      ev.stopPropagation();
+      /* 도감 안이어도 힌트권 창·버튼 밖이면 구매창을 닫는다 */
+      if (!elCodexShop.classList.contains('hidden') &&
+        !(ev.target.closest && ev.target.closest('#codexShop, #codexTickets'))) {
+        elCodexShop.classList.add('hidden');
+      }
+    });
 
     /* --- 확장 칩: 보드 가장자리에 마우스가 가면 살짝 나타난다 --- */
     document.addEventListener('pointermove', onPointerMove);
@@ -463,6 +470,7 @@ G.ui = (function () {
     elSpawnPop.classList.add('hidden');
     elWordPop.classList.add('hidden');
     elStatsPop.classList.add('hidden');
+    elCodexShop.classList.add('hidden');
     elGauge.classList.remove('tipoff');
     elMoney.classList.remove('tipoff');
   }
