@@ -167,8 +167,8 @@ G.game = (function () {
       } else {
         G.state.playTime = (G.state.playTime || 0) + dt;
         stepSpawn(dt);
-        G.drag.tick(dt);
-        G.board.step(dt);
+        try { G.drag.tick(dt); } catch (err) { console.error(err); G.drag.cancel(); }
+        try { G.board.step(dt); } catch (err) { console.error(err); }
         G.fx.update(dt);
         saveAcc += dt;
         if (saveAcc > 6) { saveAcc = 0; G.save.write(); }

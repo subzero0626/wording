@@ -321,10 +321,15 @@ G.board = (function () {
     if (a.merging || b.merging) return true;
     /* 가게와 보석은 겹쳐 올려 두어야 팔리므로 서로 통과한다 */
     if ((a.text === 'SHOP' && isGem(b)) || (b.text === 'SHOP' && isGem(a))) return true;
+    /* KEY→BOX · 글자→BOX 도 올려 두는 동작이라 밀어내면 안 된다 */
+    if ((a.text === 'BOX' && (b.text === 'KEY' || b.type === 'letter')) ||
+        (b.text === 'BOX' && (a.text === 'KEY' || a.type === 'letter'))) return true;
     if (!a.dragging && !b.dragging) return false;
     if (G.drag.selling) return true;                 // 판매하려고 밖으로 빼는 중
     var drag = a.dragging ? a : b, other = a.dragging ? b : a;
     if (G.drag.snapTarget === other) return true;    // 지금 붙이려는 상대
+    /* 장치(FORGE·CRAFT·SHOP·HAMMER) 위에 올리는 중에도 밀지 않는다 */
+    if (G.drag.deviceTarget === other) return true;
     return drag.type !== 'word' && other.type !== 'word';  // 글자끼리는 자유롭게 겹친다
   }
 

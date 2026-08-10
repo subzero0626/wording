@@ -144,6 +144,7 @@ var G = window.G || (window.G = {});
 
   /** DOM 위치 갱신 */
   Entity.prototype.render = function () {
+    if (!this.el) return;
     var tx = Math.round((this.x - this.w / 2) * 10) / 10;
     var ty = Math.round((this.y - this.h / 2 + this.hop) * 10) / 10;
     this.el.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
@@ -442,8 +443,20 @@ var G = window.G || (window.G = {});
   Entity.prototype.destroy = function () {
     var el = this.el;
     if (!el) return;
+    try {
+      var pid = el._dragPointerId;
+      if (pid != null && typeof el.hasPointerCapture === 'function' &&
+          el.hasPointerCapture(pid)) {
+        el.releasePointerCapture(pid);
+      }
+    } catch (err) { }
     el.classList.add('dying');
-    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+    /* 방금 드래그로 쓰인 것은 바로 치운다 — 남은 유령이 포인터를 삼킨다 */
+    if (this._ripNow) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    } else {
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+    }
     this.el = null; this.inner = null; this.body = null;
   };
 

@@ -20,20 +20,21 @@ G.drag = (function () {
   var outside = false;     // 보드 밖 = 판매 대기
   var dev = null;          // 지금 올려놓은 장치 (BOX · FORGE)
   var devT = 0;            // 장치 위에 대고 있은 시간
-  var snapEl, hintEl, playEl;
+  var snapEl, hintEl, playEl, layerEl;
+  var pointerId = null;
 
   function init() {
     playEl = document.getElementById('play');
     snapEl = document.getElementById('snapline');
     hintEl = document.getElementById('snaphint');
-    var layer = document.getElementById('layer');
+    layerEl = document.getElementById('layer');
 
-    layer.addEventListener('pointerdown', onDown);
+    layerEl.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
-    layer.addEventListener('dblclick', onDblClick);
-    layer.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+    layerEl.addEventListener('dblclick', onDblClick);
+    layerEl.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
   }
 
   function entFromEvent(ev) {
@@ -51,13 +52,31 @@ G.drag = (function () {
     return U.screenToPlay(playEl, ev.clientX, ev.clientY);
   }
 
+  function capturePtr(ev) {
+    pointerId = ev.pointerId;
+    try { layerEl.setPointerCapture(ev.pointerId); } catch (err) { }
+  }
+
+  function releasePtr() {
+    if (pointerId == null || !layerEl) { pointerId = null; return; }
+    try {
+      if (layerEl.hasPointerCapture && layerEl.hasPointerCapture(pointerId)) {
+        layerEl.releasePointerCapture(pointerId);
+      }
+    } catch (err) { }
+    pointerId = null;
+  }
+
   /* ------------------------------------------------------------------ */
 
   function onDown(ev) {
     if (G.game.paused || G.ui.penPicking) return;
     var e = entFromEvent(ev);
     if (!e) return;
+    /* 이전 드래그가 예외로 남았으면 여기서 정리한다 */
+    if (cur && cur !== e) cancel();
     ev.preventDefault();
+    capturePtr(ev);
 
     cur = e;
     moved = false;
@@ -74,12 +93,16 @@ G.drag = (function () {
     e.hop = 0;
     e.vx = 0; e.vy = 0;
     e.heldBy = null;
-    e.el.classList.add('drag');
+    if (e.el) {
+      e.el.classList.add('drag');
+      e.el._dragPointerId = ev.pointerId;
+    }
     G.ui.closePopovers();
   }
 
   function onMove(ev) {
     if (!cur) return;
+    if (pointerId != null && ev.pointerId !== pointerId) return;
     var p = localPoint(ev);
     var nx = p.x + offX, ny = p.y + offY;
     if (Math.abs(nx - rawX) > 1 || Math.abs(ny - rawY) > 1) moved = true;
@@ -217,14 +240,16 @@ G.drag = (function () {
 
   function paintDevice() {
     if (!dev) return;
-    if (lastTarget) { lastTarget.el.classList.remove('snaptarget'); lastTarget = null; }
+    clearLastTarget();
     snapEl.classList.remove('on');
     var need = C.DEVICE_HOLD;
     var p = dev.kind ? Math.min(1, devT / need) : 0;
     var tEl = hintEl.querySelector('.sh-t');
+    var bar = hintEl.querySelector('.sh-p');
+    if (!tEl || !bar) return;
     if (dev.kind === 'up') tEl.innerHTML = dev.label;
     else tEl.textContent = dev.label;
-    hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
+    bar.style.width = (p * 100).toFixed(0) + '%';
     hintEl.classList.remove('ability', 'growing', 'forge');
     if (dev.kind === 'up') {
       hintEl.classList.add('forge');
@@ -238,18 +263,40 @@ G.drag = (function () {
       Math.round(dev.t.y - dev.t.h / 2 - 28) + 'px) translateX(-50%)';
   }
 
+  /** 드래그만 끝내고 오브젝트는 남긴다. 장치 처리 직전에 쓴다. */
+  function endCurDrag() {
+    if (!cur) return null;
+    var e = cur;
+    e.dragging = false;
+    if (e.el) {
+      e.el.classList.remove('drag', 'selling', 'nomerge');
+      try { delete e.el._dragPointerId; } catch (err) { }
+    }
+    cur = null;
+    return e;
+  }
+
   /** 대고 있던 시간이 다 찼다 */
   function runDevice() {
     var d = dev, e = cur;
+    if (!d || !e) { dev = null; devT = 0; return; }
     dev = null; devT = 0;
     clearSnap();
-    cancel();                                   // 손에서 놓은 것으로 친다
-    if (d.kind === 'box') G.behaviors.putInBox(d.t, e);
-    else if (d.kind === 'up') G.behaviors.runUpgrade(d.t, e);
-    else if (d.kind === 'hammer') G.behaviors.strikeGem(e, d.t);
-    else if (d.kind === 'shop') G.behaviors.sellGem(d.t, e);
-    else if (d.kind === 'craft') G.behaviors.putInCraft(d.t, e);
-    else if (d.kind === 'unlock') G.behaviors.openBox(e, d.t);
+    outside = false;
+    /* 곧 board.remove 될 수 있으니 유령 노드가 포인터를 잡지 않게 */
+    e._ripNow = true;
+    endCurDrag();
+    releasePtr();
+    try {
+      if (d.kind === 'box') G.behaviors.putInBox(d.t, e);
+      else if (d.kind === 'up') G.behaviors.runUpgrade(d.t, e);
+      else if (d.kind === 'hammer') G.behaviors.strikeGem(e, d.t);
+      else if (d.kind === 'shop') G.behaviors.sellGem(d.t, e);
+      else if (d.kind === 'craft') G.behaviors.putInCraft(d.t, e);
+      else if (d.kind === 'unlock') G.behaviors.openBox(e, d.t);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   /**
@@ -284,6 +331,9 @@ G.drag = (function () {
   /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이거나 장치에 넣으려면 시간이 걸린다 */
   function tick(dt) {
     if (!cur) return;
+    /* 손을 가만히 둬도 장치 판정을 유지·갱신한다 */
+    var wasDev = !!dev;
+    if (!outside) updateDevice();
     if (dev) {
       if (dev.kind) {
         devT += dt;
@@ -292,6 +342,7 @@ G.drag = (function () {
       paintDevice();
       return;
     }
+    if (wasDev) hintEl.classList.remove('on');
     if (snap && needsHold(snap.target)) {
       holdT += dt;
       if (holdT >= holdNeed(snap.target) && !snap.armed) {
@@ -303,11 +354,15 @@ G.drag = (function () {
     }
   }
 
-  function onUp() {
-    if (!cur) return;
+  function onUp(ev) {
+    if (ev && pointerId != null && ev.pointerId !== pointerId) return;
+    if (!cur) { releasePtr(); return; }
     var e = cur;
     e.dragging = false;
-    e.el.classList.remove('drag', 'selling', 'nomerge');
+    if (e.el) {
+      e.el.classList.remove('drag', 'selling', 'nomerge');
+      try { delete e.el._dragPointerId; } catch (err) { }
+    }
     e.resetJumpTimer();
 
     var s = snap;
@@ -316,6 +371,7 @@ G.drag = (function () {
     cur = null;
     dev = null; devT = 0;
     outside = false;
+    releasePtr();
 
     if (wasOutside && moved) {
       sell(e);
@@ -440,6 +496,13 @@ G.drag = (function () {
 
   var lastTarget = null;
 
+  function clearLastTarget() {
+    if (lastTarget && lastTarget.el) {
+      lastTarget.el.classList.remove('snaptarget');
+    }
+    lastTarget = null;
+  }
+
   /** 붙였을 때 나올 글자열 */
   function snapText() {
     if (!snap) return '';
@@ -449,8 +512,7 @@ G.drag = (function () {
 
   function paintSnap() {
     if (lastTarget && (!snap || lastTarget !== snap.target)) {
-      lastTarget.el.classList.remove('snaptarget');
-      lastTarget = null;
+      clearLastTarget();
     }
     hintEl.classList.remove('risky', 'forge');
     if (!snap || !G.state.opt.snapHint) {
@@ -458,7 +520,7 @@ G.drag = (function () {
       hintEl.classList.remove('on');
       return;
     }
-    snap.target.el.classList.add('snaptarget');
+    if (snap.target.el) snap.target.el.classList.add('snaptarget');
     lastTarget = snap.target;
 
     var t = snap.target;
@@ -477,13 +539,17 @@ G.drag = (function () {
 
     if (!kind && !growing) { hintEl.classList.remove('on'); return; }
 
+    var tEl = hintEl.querySelector('.sh-t');
+    var bar = hintEl.querySelector('.sh-p');
+    if (!tEl || !bar) return;
+
     if (kind) {
       var def = G.defFor(text);
-      hintEl.querySelector('.sh-t').textContent = text + '  +' + U.money(def.value);
+      tEl.textContent = text + '  +' + U.money(def.value);
       hintEl.classList.toggle('ability', kind === 'ability');
       hintEl.style.color = (kind === 'ability' && ready) ? def.color.fg : '';
     } else {
-      hintEl.querySelector('.sh-t').textContent = text + '…';
+      tEl.textContent = text + '…';
       hintEl.classList.remove('ability');
       hintEl.style.color = '';
     }
@@ -492,7 +558,7 @@ G.drag = (function () {
 
     /* 단어가 걸려 있으면 진행 막대를 채운다 */
     var p = needsHold(t) ? Math.min(1, holdT / holdNeed(t)) : 1;
-    hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
+    bar.style.width = (p * 100).toFixed(0) + '%';
     var cx = (cur.x + t.x) / 2;
     hintEl.classList.add('on');
     hintEl.style.transform = 'translate(' + Math.round(cx) + 'px,' +
@@ -500,7 +566,7 @@ G.drag = (function () {
   }
 
   function clearSnap() {
-    if (lastTarget) { lastTarget.el.classList.remove('snaptarget'); lastTarget = null; }
+    clearLastTarget();
     snapEl.classList.remove('on');
     hintEl.classList.remove('on');
     snap = null;
@@ -571,12 +637,16 @@ G.drag = (function () {
   function cancel() {
     if (cur) {
       cur.dragging = false;
-      cur.el.classList.remove('drag', 'selling', 'nomerge');
-      var b = G.board.clampPoint(cur.x, cur.y, cur);
-      cur.x = b.x; cur.y = b.y;
+      if (cur.el) {
+        cur.el.classList.remove('drag', 'selling', 'nomerge');
+        try { delete cur.el._dragPointerId; } catch (err) { }
+        var b = G.board.clampPoint(cur.x, cur.y, cur);
+        cur.x = b.x; cur.y = b.y;
+      }
       cur = null;
     }
     clearSnap();
+    releasePtr();
     dev = null; devT = 0;
     outside = false;
   }
@@ -585,6 +655,7 @@ G.drag = (function () {
     init: init, cancel: cancel, tick: tick, hexToRgb: hexToRgb,
     get current() { return cur; },
     get snapTarget() { return snap ? snap.target : null; },
+    get deviceTarget() { return dev && dev.kind ? dev.t : null; },
     get selling() { return outside; }
   };
 })();
