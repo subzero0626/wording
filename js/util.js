@@ -50,8 +50,16 @@ G.util = (function () {
   }
 
   /**
-   * 배수 표기. 게임에 나오는 배수는 전부 0 이나 5 로 끝나게 맞춰 두었으므로
-   * 뒤에 붙는 0 은 지운다 — ×2.00 이 아니라 ×2, ×0.50 이 아니라 ×0.5.
+   * 배수 → 증감 % 표기. ×1.25 는 +25%, ×0.7 은 −30%.
+   * 게임 안 숫자는 전부 이 형식으로 읽힌다.
+   */
+  function pct(v) {
+    var p = Math.round((v - 1) * 100);
+    return (p > 0 ? '+' : '') + p + '%';
+  }
+
+  /**
+   * 배수 표기(내부·계산용). 뒤에 붙는 0 은 지운다.
    */
   function mul(v) {
     return String(Math.round(v * 100) / 100);
@@ -81,7 +89,7 @@ G.util = (function () {
     clamp: clamp, lerp: lerp, rand: rand, randInt: randInt, pick: pick, chance: chance,
     dist: dist, dist2: dist2, weightedPick: weightedPick,
     uid: uid, seedUid: seedUid, currentUid: currentUid,
-    num: num, money: money, secs: secs, mul: mul, overlap: overlap,
+    num: num, money: money, secs: secs, mul: mul, pct: pct, overlap: overlap,
     easeOutCubic: easeOutCubic, easeInOut: easeInOut, el: el
   };
 })();

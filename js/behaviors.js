@@ -75,12 +75,11 @@ G.tokens = (function () {
   var list = [];
   var layer;
 
-  /* 표 모양 — 양옆이 오목하게 파인 쪽지에 점선 하나 */
+  /* 힌트권 — 길쭉한 직사각형 + 가운데 구멍, 살짝 기울어 둔다 */
   var ICON =
-    '<svg viewBox="0 0 30 20" aria-hidden="true">' +
-    '<path class="tk-face" d="M3 2h24a1 1 0 0 1 1 1v3.1a3.9 3.9 0 0 0 0 7.8V17a1 1 0 0 1-1 1H3' +
-    'a1 1 0 0 1-1-1v-3.1a3.9 3.9 0 0 0 0-7.8V3a1 1 0 0 1 1-1z"/>' +
-    '<path class="tk-perf" d="M20.5 4.6v10.8"/></svg>';
+    '<svg viewBox="0 0 52 18" aria-hidden="true">' +
+    '<rect class="tk-face" x="1" y="1.2" width="50" height="15.6" rx="2.8"/>' +
+    '<circle class="tk-hole" cx="26" cy="9" r="4.2"/></svg>';
 
   /* 동전 — 테두리와 가운데 홈 */
   var COIN =
@@ -94,8 +93,10 @@ G.tokens = (function () {
     var el = document.createElement('div');
     el.className = 'token ' + cls;
     el.innerHTML = html;
-    el.style.left = (x - 17) + 'px';
-    el.style.top = (y - 17) + 'px';
+    var hw = cls === 'ticket' ? 18 : 17;
+    var hh = cls === 'ticket' ? 14 : 17;
+    el.style.left = (x - hw) + 'px';
+    el.style.top = (y - hh) + 'px';
     if (layer) layer.appendChild(el);
     var t = { el: el, x: x, y: y, life: 0, max: life, kind: kind, value: value || 0 };
     el.addEventListener('pointerdown', function (ev) {
@@ -346,12 +347,11 @@ G.behaviors = (function () {
    * 보석의 공통 성질 — 반짝이는 것뿐이다.
    * 값은 철자 수로 정해진다. 만들자마자 값이 제멋대로 갈리면 잘 나올 때까지
    * 다시 만들게 되므로, 값이 달라지는 것은 플레이어가 HAMMER 로 두드렸을 때뿐이다.
-   * 두드린 보석은 값을 머리 위에 달고 다닌다.
+   * 다시 매긴 값은 더블클릭 팝오버의 벌이 줄에 적힌다.
    */
   function gem(e, dt) {
-    if (e.data.worth) e.setBadge('×' + U.mul(e.data.worth), e.data.worth >= 1 ? 'good' : 'warn');
-    /* 값을 치는 자리에 올려 두었으면 미끄러져 내리지 않는다 */
-    if (nearest(e, 96, isAnyWord(['SHOP', 'HAMMER']))) settle(e);
+    /* 가게에 올려 두었으면 미끄러져 내리지 않는다 */
+    if (nearest(e, 96, isWord('SHOP'))) settle(e);
     if (Math.random() < dt * 1.2) {
       G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y + U.rand(-e.h * .3, e.h * .3), {
         vx: U.rand(-6, 6), vy: U.rand(-14, -4), g: -3,
@@ -359,6 +359,62 @@ G.behaviors = (function () {
         c: '235,225,190', a: .8, shape: 'star'
       });
     }
+  }
+
+  /**
+   * 망치로 보석을 한 번 내리친다.
+   * 깎일 수도 곱절이 될 수도 있고, 한 보석에 한 번뿐이다.
+   * @return 매긴 값. 못 치면 0
+   */
+  function strikeGem(hammer, g) {
+    if (!g || !G.board.get(g.id) || g.data.worth || g.afflicted()) return 0;
+    if (GEMS.indexOf(g.text) < 0) return 0;
+    if (!G.board.spend(C.HAMMER_COST)) {
+      G.ui.toast('망치를 쓰려면 <b>' + U.money(C.HAMMER_COST) + '</b> 이 필요하다');
+      return 0;
+    }
+    var steps = Math.round((C.HAMMER_MAX - C.HAMMER_MIN) / C.HAMMER_STEP);
+    var w = C.HAMMER_MIN + C.HAMMER_STEP * Math.floor(Math.random() * (steps + 1));
+    g.data.worth = w;
+    G.fx.burst(g.x, g.y, w >= 1 ? '230,215,150' : '150,140,130', 22, 108);
+    G.fx.ring(g.x, g.y, { r0: 4, r1: 84, life: .6, c: '170,150,120', lw: 2 });
+    if (hammer) G.fx.linkDots(hammer.x, hammer.y, g.x, g.y, 1, 0.05);
+    G.ui.toast('<b>' + g.text + '</b> 를 내리쳤다 · 값 ' + U.pct(w) +
+      ' · −' + U.money(C.HAMMER_COST));
+    return w;
+  }
+
+  function isGem(o) {
+    return o.type === 'word' && GEMS.indexOf(o.text) >= 0;
+  }
+
+  /** 아직 두드리지 않은 보석인가 */
+  function hammerable(o) {
+    return isGem(o) && !o.data.worth && !o.afflicted() && !o.burning;
+  }
+
+  /** 가게에 넘길 수 있는 보석인가 */
+  function sellableGem(o) {
+    return isGem(o) && !o.afflicted() && !o.burning;
+  }
+
+  /**
+   * 보석을 가게에 판다.
+   * @return 받은 액수. 못 팔면 0
+   */
+  function sellGem(shop, g) {
+    if (!g || !G.board.get(g.id) || !sellableGem(g)) return 0;
+    var v = Math.round(C.GEM_PRICE * g.text.length * (g.data.worth || 1));
+    var gx = g.x, gy = g.y, name = g.text;
+    var sx = shop ? shop.x : gx, sy = shop ? shop.y : gy;
+    G.board.remove(g);
+    G.board.earn(v);
+    G.ui.floatMoney(gx, gy - 28, v);
+    G.fx.coins(sx, sy, 22);
+    G.fx.burst(gx, gy, '190,170,120', 22, 116);
+    if (shop) G.fx.ring(sx, sy, { r0: 6, r1: 92, life: .7, c: '180,110,175', lw: 1.5 });
+    G.ui.toast('<b>' + name + '</b> 를 팔았다 · +' + U.num(v));
+    return v;
   }
 
   /** 물로 치는 것들 — SEED 가 싹트고 FISH 가 헤엄치는 자리 */
@@ -372,9 +428,16 @@ G.behaviors = (function () {
      실제로 손을 대는 곳은 drag.js 이고, 여기에는 규칙만 둔다.
      ================================================================== */
 
+  /** 지금 상자에 넣을 수 있는 최대 낱글자 수 (CAT 곁이면 늘어난다) */
+  function boxSlots(box) {
+    var n = C.BOX_SLOTS;
+    if (box && (box.data.catT || 0) > 0) n += C.CAT_BOX_SLOTS;
+    return n;
+  }
+
   /** 상자에 남은 자리 */
   function boxRoom(box) {
-    return C.BOX_SLOTS - (box.data.kept || '').length;
+    return boxSlots(box) - (box.data.kept || '').length;
   }
 
   /** 낱글자를 상자에 넣는다. 보드에서는 빠지므로 정원이 한 칸 빈다 */
@@ -432,8 +495,56 @@ G.behaviors = (function () {
         r: U.rand(1.4, 2.6), life: 1, c: '215,190,250', a: .9, shape: 'star'
       });
     }
-    G.ui.toast('<b>' + name + '</b> ' + (lv + 1) + '강 성공 · 벌이 ×' + C.UP_MUL[lv]);
+    G.ui.toast('<b>' + name + '</b> ' + (lv + 1) + '강 성공 · 벌이 ' + U.pct(C.UP_MUL[lv]));
     return true;
+  }
+
+  /** 같은 글자 둘을 합친 덩어리인가 (AA · BB …) */
+  function twinLetters(e) {
+    if (!e || e.afflicted() || e.burning) return false;
+    if (e.type !== 'cluster' && e.type !== 'word') return false;
+    if (e.type === 'word' && G.WORD_BY_ID[e.text]) return false; // 능력 단어는 안 됨
+    var t = e.text;
+    return t.length === 2 && t.charAt(0) === t.charAt(1) &&
+      t.charAt(0) >= 'A' && t.charAt(0) <= 'Z';
+  }
+
+  /** CRAFT 에 넣을 수 있는가 — 같은 글자 둘(AA)을 합친 것만 */
+  function craftable(e) {
+    return twinLetters(e);
+  }
+
+  /** 넣은 글자를 뺀 알파벳에서 서로 다른 둘을 고른다 */
+  function pickCraftLetters(exclude) {
+    var pool = [], i, a, b, ch;
+    for (i = 0; i < 26; i++) {
+      ch = String.fromCharCode(65 + i);
+      if (ch !== exclude) pool.push(ch);
+    }
+    a = U.pick(pool);
+    b = U.pick(pool);
+    while (b === a) b = U.pick(pool);
+    return [a, b];
+  }
+
+  /**
+   * CRAFT 에 같은 글자 둘(AA)을 한 번에 넣는다.
+   * 넣은 글자를 제외한 랜덤 글자 둘로 바뀐다.
+   */
+  function putInCraft(craft, chunk) {
+    if (!craftable(chunk) || !G.board.get(chunk.id)) return false;
+    var name = chunk.text;
+    var exclude = name.charAt(0);
+    var wx = chunk.x, wy = chunk.y;
+    G.board.remove(chunk);
+    var pair = pickCraftLetters(exclude);
+    var o1 = G.board.spawnLetter(pair[0], craft.x - 28, craft.y - 36);
+    var o2 = G.board.spawnLetter(pair[1], craft.x + 28, craft.y - 36);
+    G.fx.line(wx, wy, craft.x, craft.y, { life: .4, c: '180,140,90', lw: 2 });
+    G.fx.burst(craft.x, craft.y, '200,160,100', 28, 120);
+    G.fx.ring(craft.x, craft.y, { r0: 6, r1: 100, life: .7, c: '180,140,90', lw: 2 });
+    G.ui.toast('<b>' + name + '</b> → <b>' + pair[0] + '</b> · <b>' + pair[1] + '</b>');
+    return 'done';
   }
 
   /* ==================================================================
@@ -596,17 +707,10 @@ G.behaviors = (function () {
     /* ---------- 살림 ---------- */
 
     /**
-     * 열쇠 — 상자를 보면 다가가 멈춘다.
-     * 자물쇠를 따는 데 2.5초가 걸리는데 그 사이 열쇠가 튀어 달아나면
-     * 셈이 처음부터 다시라, 붙였는데도 열리지 않는 것처럼 보였다.
-     * (실제로 여는 일은 unlock 결속이 맡는다)
+     * 열쇠 — 상자에 직접 올려 열 때까지는 그냥 있다.
+     * (여는 손은 drag.js)
      */
-    KEY: function (e, dt) {
-      var b = nearest(e, 92, isWord('BOX'));
-      if (!b) return;
-      settle(e);
-      pull(b, e, 70, dt, 34);
-    },
+    KEY: function (e, dt) { },
 
     /**
      * 상자 — 플레이어가 직접 넣은 글자만 들어 있다.
@@ -621,7 +725,8 @@ G.behaviors = (function () {
         var per = C.BOX_PER_LETTER / C.PAY_PERIOD;      // 낱글자 하나가 1초에 쌓는 값
         e.data.stored = (e.data.stored || 0) + n * per * dt * (e.boxMul || 1);
       }
-      e.setBadge(n ? n + '장 · ' + Math.round(e.data.stored || 0) + 'w' : '');
+      /* 쌓인 값은 더블클릭 팝오버에서 본다 — 머리 위 쪽지는 쓰지 않는다 */
+      e.setBadge('');
     },
 
     /**
@@ -672,32 +777,17 @@ G.behaviors = (function () {
     },
 
     /**
-     * 망치 — 보석을 한 번 내리쳐 값을 다시 매긴다.
-     * 깎일 수도 곱절이 될 수도 있고, 한 보석에 한 번뿐이다. 두들겨 보고 마음에
-     * 안 든다고 또 두들길 수 있으면 결국 다들 최고값에서 멈추게 되어,
-     * 고민할 것이 없어진다. 한 번뿐이라야 "그냥 팔까" 를 묻게 된다.
+     * 망치 — 스스로는 두드리지 않는다.
+     * 플레이어가 망치를 보석 위로 끌어다 1초 대고 있어야 값이 다시 매겨진다
+     * (drag.js). 보석을 망치 위에 올려 두는 것만으로는 안 된다.
      */
     HAMMER: function (e, dt) {
-      if (e.burning) return;
-      var g = nearest(e, 96, function (o) {
-        return o.type === 'word' && GEMS.indexOf(o.text) >= 0 && !o.data.worth && !o.afflicted();
-      });
-      if (!g) { e.data.hold = 0; return; }
-
-      e.data.hold = (e.data.hold || 0) + dt;
-      var p = e.data.hold / C.HAMMER_HOLD;
-      G.fx.linkDots(e.x, e.y, g.x, g.y, Math.min(1, p), dt);
-      if (p < 1) return;
-
-      e.data.hold = 0;
-      /* 눈금을 두고 뽑는다 — ×1.29 보다 ×1.25 가 읽기 쉽고 견주기도 쉽다 */
-      var steps = Math.round((C.HAMMER_MAX - C.HAMMER_MIN) / C.HAMMER_STEP);
-      var w = C.HAMMER_MIN + C.HAMMER_STEP * Math.floor(Math.random() * (steps + 1));
-      g.data.worth = w;
-      g.setBadge('×' + U.mul(w), w >= 1 ? 'good' : 'warn');
-      G.fx.burst(g.x, g.y, w >= 1 ? '230,215,150' : '150,140,130', 22, 108);
-      G.fx.ring(g.x, g.y, { r0: 4, r1: 84, life: .6, c: '170,150,120', lw: 2 });
-      G.ui.toast('<b>' + g.text + '</b> 를 내리쳤다 · 값 ×' + U.mul(w));
+      if (Math.random() < dt * 1.2) {
+        G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y + U.rand(-e.h * .25, e.h * .1), {
+          vx: U.rand(-8, 8), vy: U.rand(-12, -4), r: U.rand(1, 1.6), life: .7,
+          c: '170,160,150', a: .45
+        });
+      }
     },
 
     /**
@@ -714,17 +804,31 @@ G.behaviors = (function () {
       }
     },
 
+    /**
+     * 제작대 — 같은 글자 둘(AA)을 넣어 다른 글자 둘로 바꾼다.
+     * 넣는 손은 drag.js.
+     */
+    CRAFT: function (e, dt) {
+      if (Math.random() < dt * 1.2) {
+        G.fx.spark(e.x + U.rand(-e.w * .4, e.w * .4), e.y + U.rand(-e.h * .2, e.h * .2), {
+          vx: U.rand(-6, 6), vy: U.rand(-14, -4), r: U.rand(1, 1.7), life: .7,
+          c: '200,160,100', a: .45
+        });
+      }
+    },
+
     /* ---------- 짐승 ---------- */
 
     /**
      * 고양이 — 상자를 보면 기어이 들어앉는다.
-     * 눌러앉은 상자는 값을 훨씬 빨리 쌓는다. 쌓인 값을 꺼내려면 여전히 KEY 가
-     * 있어야 하니, 상자 한 벌(BOX·CAT·KEY)은 자리를 세 칸 내주고 굴리는 살림이다.
+     * 눌러앉은 상자는 값을 훨씬 빨리 쌓고, 넣을 수 있는 글자도 둘 늘어난다.
+     * 쌓인 값을 꺼내려면 여전히 KEY 가 있어야 하니, 상자 한 벌(BOX·CAT·KEY)은
+     * 자리를 세 칸 내주고 굴리는 살림이다.
      */
     CAT: function (e, dt) {
       var b = nearest(e, 112, isWord('BOX'));
       if (!b) return;
-      /* 고양이 둘이 한 상자에 앉아도 상자가 두 배로 빨라지지는 않는다 */
+      /* 고양이 둘이 한 상자에 앉아도 속도·칸이 두 배로 늘지는 않는다 */
       b.data.catT = .4;
       b.boxMul = C.CAT_BOX;
       settle(e);                           // 자리를 잡았으면 더 뛰지 않는다
@@ -803,14 +907,14 @@ G.behaviors = (function () {
 
     EMERALD: function (e, dt) { gem(e, dt); },
 
-    /** 가게: 보석을 사들인다. 가게 위에 잠깐만 올려 두면 그 자리에서 목돈이 된다 */
+    /** 가게: 보석을 사들인다. 겹쳐 1초 대고 있으면 그 자리에서 목돈이 된다 */
     SHOP: function (e, dt) {
       if (e.burning) return;
 
       var g = nearest(e, 96, function (o) {
-        return o.type === 'word' && o !== e && GEMS.indexOf(o.text) >= 0;
+        return o.type === 'word' && o !== e && GEMS.indexOf(o.text) >= 0 && !o.afflicted();
       });
-      if (!g) { e.data.hold = 0; return; }
+      if (!g || g.dragging) { e.data.hold = 0; return; }
 
       settle(e); settle(g);                  // 값을 치는 동안에는 둘 다 멈춘다
       e.data.hold = (e.data.hold || 0) + dt;
@@ -819,15 +923,7 @@ G.behaviors = (function () {
       if (p < 1) return;
 
       e.data.hold = 0;
-      var v = Math.round(C.GEM_PRICE * g.text.length * (g.data.worth || 1));
-      var gx = g.x, gy = g.y, name = g.text;
-      G.board.remove(g);
-      G.board.earn(v);
-      G.ui.floatMoney(e.x, e.y - 28, v);
-      G.fx.coins(e.x, e.y, 22);
-      G.fx.burst(gx, gy, '190,170,120', 22, 116);
-      G.fx.ring(e.x, e.y, { r0: 6, r1: 92, life: .7, c: '180,110,175', lw: 1.5 });
-      G.ui.toast('<b>' + name + '</b> 를 팔았다');
+      sellGem(e, g);
     },
 
     /**
@@ -941,16 +1037,16 @@ G.behaviors = (function () {
     },
 
     /**
-     * 가게가 잔돈을 흘린다.
-     * 저절로 들어오면 그냥 벌이가 조금 오른 것과 다를 바 없으니, 바닥에 떨어뜨린다.
-     * 보고 있으면 주우면 되고, MOUSE 를 세워 두면 대신 주워 온다.
+     * 가게가 잔돈을 바로 준다.
+     * 바닥에 떨구면 주워야 해서 MOUSE 와 겹치고, 그냥 벌이면 보석 매입과
+     * 구분이 안 된다. 가끔·소액으로만 들어와 가게가 서 있는 맛을 남긴다.
      */
     change: function (e) {
-      if (e.burning || G.tokens.count() > 5) return;
-      var a = Math.random() * 6.2832, d = U.rand(46, 88);
-      var p = G.board.clampPoint(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, { w: 40, h: 40 });
-      G.tokens.spawnCoin(p.x, p.y, reward(C.COIN_VALUE, C.COIN_FLAT));
-      G.fx.coins(e.x, e.y, 6);
+      if (e.burning) return;
+      var v = U.randInt(C.SHOP_COIN_MIN, C.SHOP_COIN_MAX);
+      G.board.earn(v);
+      G.ui.floatMoney(e.x, e.y - 22, v);
+      G.fx.coins(e.x, e.y, 8);
     },
 
     /* 벌이 꿀을 턴다 — 나무가 곁에 있을 때만 */
@@ -975,32 +1071,11 @@ G.behaviors = (function () {
     /**
      * 열쇠로 상자를 연다. 쌓인 값을 받고 상자는 텅 빈다 —
      * 안에 넣은 글자는 값으로 바뀐 셈이라 돌아오지 않는다.
-     * 열쇠는 한 번 쓰면 부러진다. 글자 하나만 남고 나머지는 사라지니,
-     * 다음 상자를 열려면 열쇠를 다시 만들어야 한다.
+     * 열쇠는 한 번 쓰면 부러진다. 상자는 그대로 남아서 다시 쓸 수 있다.
+     * (드래그로 KEY 를 BOX 위에 올려 연다 — unlock 결속은 쓰지 않는다)
      */
-    unlock: function (a, b) {          // a=KEY, b=BOX
-      var v = Math.round(b.data.stored || 0);
-      var kept = (b.data.kept || '').length;
-      if (!v && !kept) return;         // 빈 상자에 열쇠를 부러뜨릴 이유는 없다
-
-      b.data.stored = 0;
-      b.data.kept = '';
-      b.setBadge('');
-      if (v > 0) {
-        G.board.earn(v);
-        G.ui.floatMoney(b.x, b.y - 24, v);
-      }
-      G.fx.coins(b.x, b.y, 14);
-      G.fx.ring(b.x, b.y, { r0: 6, r1: 80, life: .6, c: '200,170,80', lw: 1.5 });
-
-      var kx = a.x, ky = a.y, left = a.text.charAt(U.randInt(0, a.text.length - 1));
-      G.board.remove(a);
-      G.fx.burst(kx, ky, '190,165,90', 16, 92);
-      if (G.board.count() < G.maxEntities()) {
-        var L = G.board.spawnLetter(left, kx, ky + 8);
-        L.vy = 40;
-      }
-      G.ui.toast('<b>' + b.text + '</b> 를 열었다 · 열쇠는 부러졌다');
+    unlock: function (a, b) {
+      openBox(a, b);
     }
   };
 
@@ -1059,10 +1134,76 @@ G.behaviors = (function () {
     G.ui.toast('금고가 열렸다 · <b>' + U.money(pay) + '</b> (이자 ' + Math.round(rate * 100) + '%)');
   }
 
+  /**
+   * 상자에서 쌓인 값을 꺼낸다. KEY 가 열 때 부른다.
+   * 상자는 그대로 남고, 넣은 글자는 돌아오지 않는다.
+   * @return 꺼낸 액수. 비어 있어 아무것도 안 했으면 -1
+   */
+  function emptyBox(box) {
+    var v = Math.round(box.data.stored || 0);
+    var kept = (box.data.kept || '').length;
+    if (!v && !kept) return -1;
+
+    box.data.stored = 0;
+    box.data.kept = '';
+    box.setBadge('');
+    if (v > 0) {
+      G.board.earn(v);
+      G.ui.floatMoney(box.x, box.y - 24, v);
+    }
+    G.fx.coins(box.x, box.y, 14);
+    G.fx.ring(box.x, box.y, { r0: 6, r1: 80, life: .6, c: '200,170,80', lw: 1.5 });
+    return v;
+  }
+
+  /**
+   * KEY 를 BOX 위에 올려 연다. 값이 나오면 열쇠는 부러진다.
+   * @return 꺼낸 액수. 실패하면 -1
+   */
+  function openBox(key, box) {
+    if (!key || !box || !G.board.get(key.id) || !G.board.get(box.id)) return -1;
+    var v = emptyBox(box);
+    if (v < 0) {
+      G.ui.toast('상자가 비어 있다');
+      return -1;
+    }
+    var kx = key.x, ky = key.y;
+    var left = key.text.charAt(U.randInt(0, key.text.length - 1));
+    G.board.remove(key);
+    G.fx.burst(kx, ky, '190,165,90', 16, 92);
+    if (G.board.count() < G.maxEntities()) {
+      var L = G.board.spawnLetter(left, kx, ky + 8);
+      L.vy = 40;
+    }
+    G.ui.toast('<b>BOX</b> 를 열었다 · 열쇠만 부러졌다');
+    return v;
+  }
+
+  /**
+   * 금고에 쌓인 원금을 당장 찾는다. 이자는 만기까지 기다려야 붙으니
+   * 지금 찾는 쪽에는 원금만 준다. 시계는 다시 처음부터.
+   * @return 찾은 액수 (없으면 0)
+   */
+  function claimVault(at) {
+    var v = Math.round(G.state.vault || 0);
+    if (v < 1) return 0;
+    G.state.vault = 0;
+    G.state.vaultT = 0;
+    G.state.money += v;
+    G.state.totalEarned = (G.state.totalEarned || 0) + v;
+    var x = at ? at.x : 0, y = at ? at.y : 0;
+    if (at) {
+      G.ui.floatMoney(x, y - 22, v);
+      G.fx.coins(x, y, 14);
+      G.fx.ring(x, y, { r0: 6, r1: 72, life: .6, c: '70,150,110', lw: 1.4 });
+    }
+    return v;
+  }
+
   /* ==================================================================
      메인 루프
      ================================================================== */
-  var SPREAD = [{ with: '#burnable', range: 104, time: 26, key: 'ignite' }];
+  var SPREAD = [{ with: '#burnable', range: 104, time: C.IGNITE_TIME, key: 'ignite' }];
 
   function step(dt) {
     frameNo++;
@@ -1113,16 +1254,24 @@ G.behaviors = (function () {
     /* 4. 금고 */
     stepVault(dt, list);
 
-    /* 5. 화재 결과 — 다 타면 재만 남는다.
+    /* 5. 화재 결과 — 불이 붙은 채 BURN_LIFE 초면 사라진다.
+       TREE 만은 재가 COAL 로 남는다.
        글자로 흩어지게 두었더니 불이 오히려 이득이었다. 다 탄 자리에서 글자가
        도로 나오니 잃는 것이 없고, 정원까지 늘어난 꼴이라 일부러 태우는 편이
        빨랐다. 타면 글자까지 없어져야 불을 무서워한다. */
     for (i = list.length - 1; i >= 0; i--) {
       e = list[i];
-      if (!e.burning || e.burnTime <= C.BURN_COLLAPSE) continue;
-      G.ui.toast('<b>' + e.text + '</b> 가 다 타고 재만 남았다');
-      G.fx.burst(e.x, e.y, '120,110,105', 26, 130);
+      if (!e.burning || e.burnTime <= C.BURN_LIFE) continue;
+      var bx = e.x, by = e.y, name = e.text, wasTree = name === 'TREE';
+      G.fx.burst(bx, by, '120,110,105', 26, 130);
       G.board.remove(e);
+      if (wasTree) {
+        var coal = G.board.makeWord('COAL', bx, by);
+        G.game.onWordFormed(coal, true, 'ability');
+        G.ui.toast('<b>TREE</b> 가 타서 <b>COAL</b> 이 되었다');
+      } else {
+        G.ui.toast('<b>' + name + '</b> 가 다 타서 사라졌다');
+      }
     }
 
     G.tokens.step(dt);
@@ -1159,8 +1308,12 @@ G.behaviors = (function () {
 
   return {
     step: step, frame: frame,
-    boxRoom: boxRoom, putInBox: putInBox,
+    boxRoom: boxRoom, boxSlots: boxSlots, putInBox: putInBox,
+    emptyBox: emptyBox, openBox: openBox, claimVault: claimVault,
     upLevel: upLevel, upgradable: upgradable, runUpgrade: runUpgrade,
+    hammerable: hammerable, strikeGem: strikeGem,
+    sellableGem: sellableGem, sellGem: sellGem,
+    craftable: craftable, putInCraft: putInCraft,
     FIELDS: FIELDS, ACTIONS: ACTIONS, BONDS: BONDS
   };
 })();

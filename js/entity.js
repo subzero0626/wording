@@ -181,14 +181,8 @@ var G = window.G || (window.G = {});
     return (this.def.value || 0);
   };
 
-  /**
-   * 배수까지 얹은 실제 벌이.
-   * 자리에서 얻는 배수(SUN·MOON·LUCK…)는 아무리 겹쳐도 INCOME_CAP 에서 잘린다.
-   * 톱니바퀴 배수는 그 천장과 따로 곱한다 — 맞물릴 수 있는 수가 넷으로 정해져 있어
-   * 스스로 한계를 갖고, 보드 자리를 여러 칸 내주어야만 얻는 것이기 때문이다.
-   */
   Entity.prototype.income = function () {
-    return this.payValue() * Math.min(this.incomeMul, C.INCOME_CAP) *
+    return this.payValue() * this.incomeMul *
       this.gearMul * this.upMul() * this.worthMul();
   };
 
@@ -203,8 +197,8 @@ var G = window.G || (window.G = {});
 
   /**
    * 강화로 얻은 영구 배수.
-   * 톱니와 마찬가지로 벌이 천장 바깥에서 곱한다 — 자리를 옮겨도 따라다니고,
-   * 잃을 것을 걸고 얻은 값이라 다른 부스터와 자리를 다투게 두지 않는다.
+   * 자리를 옮겨도 따라다니고, 잃을 것을 걸고 얻은 값이라
+   * 다른 부스터와 자리를 다투게 두지 않는다.
    */
   Entity.prototype.upMul = function () {
     var lv = (this.data && this.data.up) || 0;
@@ -232,10 +226,10 @@ var G = window.G || (window.G = {});
   /**
    * 벌이 주기를 얼마나 당겨 받고 있는가 (1 이면 제 속도).
    * 한 번에 얼마를 버느냐(income)와 일부러 갈라 둔 값이다 —
-   * MOON 은 앞을, SUN 은 뒤를 맡는다. 한 덩어리로 두면 둘이 같은 단어가 된다.
+   * MOON 은 앞을, SUN 은 뒤를 맡는다.
    */
   Entity.prototype.haste = function () {
-    return Math.min(this.payMul, C.HASTE_CAP);
+    return this.payMul;
   };
 
   /** 20초 동안 실제로 들어오는 양 (주기까지 셈에 넣은 값) */

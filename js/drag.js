@@ -55,7 +55,7 @@ G.drag = (function () {
   /* ------------------------------------------------------------------ */
 
   function onDown(ev) {
-    if (G.game.paused) return;
+    if (G.game.paused || G.ui.penPicking) return;
     var e = entFromEvent(ev);
     if (!e) return;
     ev.preventDefault();
@@ -149,16 +149,62 @@ G.drag = (function () {
           ? { t: o, kind: 'box', label: '상자에 넣기', full: false }
           : { t: o, kind: null, label: '상자가 가득 찼다', full: true };
       }
+      if (cur.text === 'KEY' && o.text === 'BOX') {
+        var kept = (o.data && o.data.kept) || '';
+        var stored = Math.round((o.data && o.data.stored) || 0);
+        if (!kept.length && !stored) {
+          return { t: o, kind: null, full: true, label: '상자가 비어 있다' };
+        }
+        return {
+          t: o, kind: 'unlock', full: false,
+          label: '열기 · ' + kept.length + '개 · ' + stored + 'w'
+        };
+      }
       if (o.text === 'FORGE' && cur.type === 'word') {
         if (!G.behaviors.upgradable(cur)) {
           return { t: o, kind: null, full: true, label: G.WORD_BY_ID[cur.text]
             ? '능력 단어는 걸 수 없다' : '더 올릴 수 없다' };
         }
         var lv = G.behaviors.upLevel(cur);
+        var ok = Math.round(C.UP_ODDS[lv] * 100);
+        var bad = 100 - ok;
         return {
           t: o, kind: 'up', full: false,
-          label: (lv + 1) + '강 · 성공 ' + Math.round(C.UP_ODDS[lv] * 100) + '%'
+          label: '<span class="up-ok">' + ok + '%</span>' +
+            '<span class="up-sep">|</span>' +
+            '<span class="up-bad">' + bad + '%</span>'
         };
+      }
+      if (o.text === 'CRAFT' && (cur.type === 'cluster' || cur.type === 'word' || cur.type === 'letter')) {
+        if (G.behaviors.craftable(cur)) {
+          return { t: o, kind: 'craft', full: false, label: '바꾸기 · ' + cur.text };
+        }
+        if (cur.type === 'letter') {
+          return { t: o, kind: null, full: true, label: '같은 글자 둘을 먼저 합쳐라' };
+        }
+        if (cur.type === 'cluster' && cur.text.length === 2 &&
+            cur.text.charAt(0) !== cur.text.charAt(1)) {
+          return { t: o, kind: null, full: true, label: '같은 글자끼리만 (AA)' };
+        }
+        if (cur.type === 'cluster') {
+          return { t: o, kind: null, full: true, label: '글자 둘만 (AA)' };
+        }
+        return { t: o, kind: null, full: true, label: '같은 글자 둘(AA)만 넣을 수 있다' };
+      }
+      /* 보석을 가게에 올려 팔 때 — 드래그로 겹쳐 1초 */
+      if (o.text === 'SHOP' && cur.type === 'word' && G.behaviors.sellableGem(cur)) {
+        return { t: o, kind: 'shop', label: '팔기', full: false };
+      }
+      /* 망치를 보석 위로 끌어다 대고 있어야 두드린다 — 보석을 망치에 올리는 길은 없다 */
+      if (cur.text === 'HAMMER' && G.behaviors.hammerable(o)) {
+        if (G.state.money < C.HAMMER_COST) {
+          return { t: o, kind: null, full: true, label: '내리치기 ' + C.HAMMER_COST + 'w 필요' };
+        }
+        return { t: o, kind: 'hammer', label: '내리치기 · ' + C.HAMMER_COST + 'w', full: false };
+      }
+      if (cur.text === 'HAMMER' && o.type === 'word' &&
+          ['GOLD', 'RUBY', 'DIAMOND', 'EMERALD'].indexOf(o.text) >= 0 && o.data.worth) {
+        return { t: o, kind: null, label: '이미 두드렸다', full: true };
       }
     }
     return null;
@@ -174,13 +220,19 @@ G.drag = (function () {
     if (!dev) return;
     if (lastTarget) { lastTarget.el.classList.remove('snaptarget'); lastTarget = null; }
     snapEl.classList.remove('on');
-    var need = dev.kind === 'up' ? C.UP_HOLD : C.BOX_HOLD;
+    var need = C.DEVICE_HOLD;
     var p = dev.kind ? Math.min(1, devT / need) : 0;
-    hintEl.querySelector('.sh-t').textContent = dev.label;
+    var tEl = hintEl.querySelector('.sh-t');
+    if (dev.kind === 'up') tEl.innerHTML = dev.label;
+    else tEl.textContent = dev.label;
     hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
-    hintEl.classList.remove('ability', 'growing');
-    hintEl.classList.toggle('waiting', p < 1);
-    hintEl.classList.toggle('risky', dev.kind === 'up');
+    hintEl.classList.remove('ability', 'growing', 'forge');
+    if (dev.kind === 'up') {
+      hintEl.classList.add('forge');
+      hintEl.classList.remove('waiting');
+    } else {
+      hintEl.classList.toggle('waiting', p < 1);
+    }
     hintEl.style.color = '';
     hintEl.classList.add('on');
     hintEl.style.transform = 'translate(' + Math.round(dev.t.x) + 'px,' +
@@ -195,6 +247,10 @@ G.drag = (function () {
     cancel();                                   // 손에서 놓은 것으로 친다
     if (d.kind === 'box') G.behaviors.putInBox(d.t, e);
     else if (d.kind === 'up') G.behaviors.runUpgrade(d.t, e);
+    else if (d.kind === 'hammer') G.behaviors.strikeGem(e, d.t);
+    else if (d.kind === 'shop') G.behaviors.sellGem(d.t, e);
+    else if (d.kind === 'craft') G.behaviors.putInCraft(d.t, e);
+    else if (d.kind === 'unlock') G.behaviors.openBox(e, d.t);
   }
 
   /**
@@ -207,7 +263,10 @@ G.drag = (function () {
   function sellable(e) {
     if (!e) return false;
     if (e.type === 'letter') return true;
-    return e.type === 'word' && !!e.def.sellable && !e.afflicted();
+    if (e.type !== 'word' || !e.def.sellable || e.afflicted()) return false;
+    /* PEN 은 고른 글자가 들어갈 자리가 있어야 한다 — 가득 차면 못 버린다 */
+    if (e.text === 'PEN' && G.board.count() >= G.maxEntities()) return false;
+    return true;
   }
 
   /**
@@ -218,20 +277,26 @@ G.drag = (function () {
     return target.type === 'word';
   }
 
+  /** 대고 있어야 하는 시간 — 강화된 단어는 더 길다 */
+  function holdNeed(target) {
+    if (!needsHold(target)) return 0;
+    return (target.data && target.data.up) ? C.STAR_HOLD : C.WORD_HOLD;
+  }
+
   /** 드래그가 이어지는 동안 매 프레임 — 단어에 붙이거나 장치에 넣으려면 시간이 걸린다 */
   function tick(dt) {
     if (!cur) return;
     if (dev) {
       if (dev.kind) {
         devT += dt;
-        if (devT >= (dev.kind === 'up' ? C.UP_HOLD : C.BOX_HOLD)) { runDevice(); return; }
+        if (devT >= C.DEVICE_HOLD) { runDevice(); return; }
       }
       paintDevice();
       return;
     }
     if (snap && needsHold(snap.target)) {
       holdT += dt;
-      if (holdT >= C.WORD_HOLD && !snap.armed) {
+      if (holdT >= holdNeed(snap.target) && !snap.armed) {
         snap.armed = true;
         G.fx.ring(snap.target.x, snap.target.y,
           { r0: 4, r1: 46, life: .4, c: '47,125,85', lw: 2 });
@@ -275,19 +340,33 @@ G.drag = (function () {
      ------------------------------------------------------------------ */
   function sell(e) {
     var time = e.type === 'word' && e.text === 'TIME';
+    var pen = e.type === 'word' && e.text === 'PEN';
+    /* 버리는 순간에 다시 한 번 — 그사이에 글자가 들어왔을 수 있다 */
+    if (pen && G.board.count() >= G.maxEntities()) {
+      var back = G.board.clampPoint(e.x, e.y, e);
+      e.x = back.x; e.y = back.y;
+      e.land();
+      G.ui.toast('보드가 가득 차 있어 <b>PEN</b> 을 버릴 수 없다');
+      return;
+    }
     if (time) {
       G.fx.burst(e.x, e.y, '140,138,170', 22, 110);
       G.fx.ring(e.x, e.y, { r0: 6, r1: 88, life: .7, c: '140,138,170', lw: 1.6 });
     }
+    if (pen) {
+      G.fx.burst(e.x, e.y, '90,120,160', 18, 100);
+      G.fx.ring(e.x, e.y, { r0: 6, r1: 80, life: .55, c: '90,120,160', lw: 1.5 });
+    }
     G.board.remove(e);
     if (time) G.game.sellTime();
+    if (pen) G.ui.openPenPick();
     G.game.soldOne();
     G.ui.pulseGauge();
   }
 
   function onDblClick(ev) {
     var e = entFromEvent(ev);
-    if (!e || G.game.paused) return;
+    if (!e || G.game.paused || G.ui.penPicking) return;
     ev.preventDefault();
     if (e.type === 'cluster') {
       G.board.explode(e);
@@ -362,7 +441,7 @@ G.drag = (function () {
       if (!prev || prev.target !== o2 || prev.side !== best.side) holdT = 0;
 
       /* 단어가 걸려 있으면 잠깐 대고 있어야 한다 */
-      best.armed = !needsHold(o2) || (holdT >= C.WORD_HOLD);
+      best.armed = !needsHold(o2) || (holdT >= holdNeed(o2));
       snap = best;
     } else {
       holdT = 0;
@@ -383,7 +462,7 @@ G.drag = (function () {
       lastTarget.el.classList.remove('snaptarget');
       lastTarget = null;
     }
-    hintEl.classList.remove('risky');
+    hintEl.classList.remove('risky', 'forge');
     if (!snap || !G.state.opt.snapHint) {
       snapEl.classList.remove('on');
       hintEl.classList.remove('on');
@@ -422,7 +501,7 @@ G.drag = (function () {
     hintEl.classList.toggle('waiting', !ready);
 
     /* 단어가 걸려 있으면 진행 막대를 채운다 */
-    var p = needsHold(t) ? Math.min(1, holdT / C.WORD_HOLD) : 1;
+    var p = needsHold(t) ? Math.min(1, holdT / holdNeed(t)) : 1;
     hintEl.querySelector('.sh-p').style.width = (p * 100).toFixed(0) + '%';
     var cx = (cur.x + t.x) / 2;
     hintEl.classList.add('on');

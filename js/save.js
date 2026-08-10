@@ -6,7 +6,7 @@ var G = window.G || (window.G = {});
 
 G.save = (function () {
   /* 재화 규칙이 완전히 바뀌었으므로 v1 저장본은 이어받지 않는다 */
-  var KEY = 'letters-board-v2';
+  var KEY = 'letters-board-v3';
 
   /* 초기화한 뒤에는 다시 쓰지 않는다.
      이게 없으면 새로고침 직전의 beforeunload 가 방금 지운 자리에 현재 판을
@@ -18,6 +18,7 @@ G.save = (function () {
       v: 2,
       money: 0,
       totalEarned: 0,
+      totalSpent: 0,
       spawnLevel: 0,
       expandLevel: 0,
       spawnTimer: G.C.SPAWN_STEPS[0],
@@ -78,6 +79,7 @@ G.save = (function () {
     if (!list) return;
     for (var i = 0; i < list.length; i++) {
       var d = list[i];
+      if (d.type === 'word' && d.text === 'WALL') d.text = 'ROCK';  // 이름만 바뀜
       if (d.type === 'word' && !G.lookupWord(d.text)) continue;
       var e = new G.Entity(d.type, d.text, d.x, d.y);
       e.data = d.data || {};

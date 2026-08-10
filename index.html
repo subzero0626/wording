@@ -42,17 +42,16 @@
   </div>
 
   <!-- 상단 우측: 재화 + 일시정지(설정 겸용) -->
-  <div id="money" data-tip="힌트권 사기"><b class="m-v">0</b><span class="m-u">w</span></div>
+  <div id="money" data-tip="통계"><b class="m-v">0</b><span class="m-u">w</span></div>
 
-  <!-- 힌트권 구매창 (재화를 누르면 그 아래에 열린다) -->
-  <div id="ticketPop" class="pop hidden">
-    <div class="tk-head">
-      <span class="tk-t">힌트권</span>
-      <b class="tk-have">0장</b>
-    </div>
-    <div class="tk-note">도감에서 잠긴 칸을 누르면 한 단계씩 열립니다</div>
-    <div class="tk-buys"></div>
-    <div class="tk-next">한 장 살 때마다 <b>10w</b> 씩 오릅니다</div>
+  <!-- 통계 (재화를 누르면 그 아래에 열린다) -->
+  <div id="statsPop" class="pop hidden">
+    <div class="st-head">통계</div>
+    <div class="st-row"><span>지금 1분에</span><b class="st-rate">0w</b></div>
+    <div class="st-row"><span>지금까지 번 총</span><b class="st-total">0w</b></div>
+    <div class="st-row"><span>지금까지 쓴 총</span><b class="st-spent">0w</b></div>
+    <div class="st-sub">지금 가장 잘 버는 단어</div>
+    <div class="st-tops"></div>
   </div>
   <button id="pauseBtn" aria-label="일시정지 · 설정" data-tip="일시정지 · 설정">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -73,6 +72,11 @@
       </div>
       <button id="codexClose" aria-label="닫기">✕</button>
     </header>
+    <div id="codexShop" class="hidden">
+      <div class="st-head">힌트권</div>
+      <div class="tk-buys"></div>
+      <div class="tk-note">한 장 살 때마다 <b class="tk-step">20w</b>씩 오릅니다 · 잠긴 칸을 누르면 한 단계씩 열립니다</div>
+    </div>
     <div id="codexList"></div>
     <footer>보드에서 글자를 끌어다 붙이면 단어가 됩니다.</footer>
   </aside>
@@ -123,7 +127,20 @@
     <div class="wp-ko"></div>
     <div class="wp-gloss"></div>
     <div class="wp-pay"></div>
-    <button class="wp-break">분해</button>
+    <div class="wp-acts">
+      <button class="wp-claim hidden">꺼내기</button>
+      <button class="wp-break">분해</button>
+    </div>
+  </div>
+
+  <!-- PEN: 원하는 글자 고르기 -->
+  <div id="penVeil" class="hidden">
+    <div class="veil-inner pen-inner">
+      <h1>PEN</h1>
+      <p>원하는 글자를 타이핑하세요</p>
+      <p class="tiny">A–Z · Esc 로 취소</p>
+      <div class="pen-cursor">_</div>
+    </div>
   </div>
 
   <!-- 토스트 -->

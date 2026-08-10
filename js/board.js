@@ -207,32 +207,36 @@ G.board = (function () {
   /**
    * 단어/클러스터를 낱글자로 되돌린다.
    *
-   * 정원이 모자라면 흩지 않는다. 예전에는 그냥 흩어져서, 스무 칸짜리 보드에
-   * 여덟 글자 단어를 분해하면 정원을 일곱이나 넘겨 버렸다 — 새 글자는 안 나오는데
-   * 보드만 미어터지는 상태가 되어 무엇 하나 만들 수 없었다.
+   * 정원이 넘치더라도 흩는다 — 잘못 붙인 것을 고칠 길이 막히면 안 된다.
+   * 넘친 동안에는 새 글자가 안 나오니 (생성기가 정원을 본다),
+   * 합치거나 팔아서 자리를 비우면 다시 돌아온다.
    *
    * @return 흩었으면 true
    */
   function explode(e) {
     var text = e.text, n = text.length;
     var cx = e.x, cy = e.y;
-    /* 지금 이 오브젝트가 먹고 있는 자리(단어는 한 칸, 덩어리는 글자 수)를 빼고
-       셈한다. 뜻 없는 덩어리를 도로 흩는 것은 자리를 늘리지도 줄이지도 않는다 */
-    var mine = e.type === 'word' ? 1 : n;
-    if (count() - mine + n > G.maxEntities()) {
-      G.ui.toast('자리가 모자라 <b>' + text + '</b> 를 흩을 수 없다');
-      G.fx.ring(cx, cy, { r0: 10, r1: 46, life: .4, c: '190,120,110', lw: 1.5 });
-      return false;
+    /* 망치로 두드린 보석은 글자 절반이 깨져 나간다 */
+    var keep = (e.data && e.data.worth) ? Math.floor(n / 2) : n;
+    var idx = [];
+    var i, j, tmp;
+    for (i = 0; i < n; i++) idx.push(i);
+    if (keep < n) {
+      for (i = n - 1; i > 0; i--) {
+        j = Math.floor(Math.random() * (i + 1));
+        tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+      }
+      idx = idx.slice(0, keep);
     }
     remove(e);
-    for (var i = 0; i < n; i++) {
-      var a = (i / n) * Math.PI * 2 + U.rand(-.3, .3);
+    for (i = 0; i < idx.length; i++) {
+      var a = (i / Math.max(1, idx.length)) * Math.PI * 2 + U.rand(-.3, .3);
       var d = 26 + n * 5;
-      var L = spawnLetter(text[i], cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+      var L = spawnLetter(text[idx[i]], cx + Math.cos(a) * d, cy + Math.sin(a) * d);
       L.vx = Math.cos(a) * 70;
       L.vy = Math.sin(a) * 70;
     }
-    G.fx.burst(cx, cy, '160,155,148', 12, 70);
+    G.fx.burst(cx, cy, '160,155,148', keep < n ? 18 : 12, keep < n ? 90 : 70);
     return true;
   }
 
@@ -248,7 +252,7 @@ G.board = (function () {
       e.speedMul = 1;
       e.incomeMul = 1;
       e.payMul = 1;           // SUN 이 당기는 벌이 주기
-      e.gearMul = 1;          // 톱니바퀴가 맞물려 얻는 배수 (상한과 따로 논다)
+      e.gearMul = 1;          // 톱니바퀴가 맞물려 얻는 배수
       /* 숯이 지핀 불기운과 상자에 들어앉은 고양이. 다른 장 효과와 달리 짧게
          남겨 두는데, 둘 중 어느 쪽 차례가 먼저 오든 같게 굴리려는 것이다 */
       e.data.stokeT = Math.max(0, (e.data.stokeT || 0) - dt);
@@ -277,8 +281,14 @@ G.board = (function () {
   }
 
   /** 조합하려고 끌고 온 것을 밀어내면 안 된다 (이게 없으면 붙이려 할 때 도망간다) */
+  function isGem(e) {
+    return e.type === 'word' && e.def && (e.def.tags || []).indexOf('gem') >= 0;
+  }
+
   function noPush(a, b) {
     if (a.merging || b.merging) return true;
+    /* 가게와 보석은 겹쳐 올려 두어야 팔리므로 서로 통과한다 */
+    if ((a.text === 'SHOP' && isGem(b)) || (b.text === 'SHOP' && isGem(a))) return true;
     if (!a.dragging && !b.dragging) return false;
     if (G.drag.selling) return true;                 // 판매하려고 밖으로 빼는 중
     var drag = a.dragging ? a : b, other = a.dragging ? b : a;
@@ -307,7 +317,7 @@ G.board = (function () {
   /* ------------------------------------------------------------------
      벽 — 지나갈 수 없는 것
      ------------------------------------------------------------------
-     WALL 은 제자리에서 꿈쩍하지 않고, 뛰어다니는 것들이 그 너머로 넘어가지
+     ROCK 은 제자리에서 꿈쩍하지 않고, 뛰어다니는 것들이 그 너머로 넘어가지
      못하게 막는다. 밀어내기(separate)만으로는 벽이 되지 않는다 — 점프는
      출발점에서 도착점으로 곧장 이어 붙이는 것이라, 벽 위를 훌쩍 건너뛰어
      반대편에 내려앉아 버리기 때문이다. 그래서 뛸 자리를 고를 때 아예
@@ -432,6 +442,7 @@ G.board = (function () {
   function spend(amount) {
     if (G.state.money < amount) return false;
     G.state.money -= amount;
+    G.state.totalSpent = (G.state.totalSpent || 0) + amount;
     return true;
   }
 

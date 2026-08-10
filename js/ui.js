@@ -9,9 +9,11 @@ G.ui = (function () {
   var U = G.util, C = G.C;
 
   var elMoney, elMoneyVal, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
-    elBoardCount, elCountNum, elCountMax, elTicketPop, elTicketBuys,
+    elBoardCount, elCountNum, elCountMax, elStatsPop, elCodexShop, elTicketBuys,
     elCodex, elCodexTab, elCodexList, elCodexCount, elCodexTickets, elCodexFoot,
-    elChip, elToasts, elPauseVeil, elIdleVeil, elIntro, playEl, appEl;
+    elChip, elToasts, elPauseVeil, elIdleVeil, elPenVeil, elIntro, playEl, appEl;
+
+  var penPicking = false;
 
   var lastMoneyShown = -1;
   var lastCountShown = -1, lastMaxShown = -1;
@@ -36,13 +38,17 @@ G.ui = (function () {
     elCodexCount = document.getElementById('codexCount');
     elCodexTickets = document.getElementById('codexTickets');
     elCodexFoot = document.querySelector('#codex footer');
-    elTicketPop = document.getElementById('ticketPop');
-    elTicketBuys = elTicketPop.querySelector('.tk-buys');
+    elCodexShop = document.getElementById('codexShop');
+    elTicketBuys = elCodexShop.querySelector('.tk-buys');
+    elStatsPop = document.getElementById('statsPop');
     elChip = document.getElementById('expandChip');
     elToasts = document.getElementById('toasts');
     elPauseVeil = document.getElementById('pauseVeil');
     elIdleVeil = document.getElementById('idleVeil');
+    elPenVeil = document.getElementById('penVeil');
     elIntro = document.getElementById('intro');
+
+    window.addEventListener('keydown', onPenKey);
 
     /* --- 생성 게이지 / 업그레이드 팝오버 --- */
     elGauge.addEventListener('click', function (ev) {
@@ -54,14 +60,15 @@ G.ui = (function () {
       ev.stopPropagation();
       if (G.game.buySpawnUpgrade()) { renderSpawnPop(); }
     });
-    /* --- 재화(또는 도감 머리글의 힌트권)를 누르면 구매창 --- */
+    /* --- 재화 → 통계 / 도감 힌트권 → 바로 아래 구매창 --- */
     elMoney.addEventListener('click', function (ev) {
       ev.stopPropagation();
-      if (elTicketPop.classList.contains('hidden')) openTicketPop();
+      if (elStatsPop.classList.contains('hidden')) openStatsPop();
       else closePopovers();
     });
     elCodexTickets.addEventListener('click', function (ev) {
-      ev.stopPropagation(); openTicketPop();
+      ev.stopPropagation();
+      toggleCodexShop();
     });
     buildTicketButtons();
 
@@ -71,7 +78,8 @@ G.ui = (function () {
       elWordPop.addEventListener(t, function (ev) { ev.stopPropagation(); });
       elGauge.addEventListener(t, function (ev) { ev.stopPropagation(); });
       elMoney.addEventListener(t, function (ev) { ev.stopPropagation(); });
-      elTicketPop.addEventListener(t, function (ev) { ev.stopPropagation(); });
+      elStatsPop.addEventListener(t, function (ev) { ev.stopPropagation(); });
+      elCodexShop.addEventListener(t, function (ev) { ev.stopPropagation(); });
     });
     document.addEventListener('pointerdown', function () { closePopovers(); });
 
@@ -156,7 +164,8 @@ G.ui = (function () {
       ? '보드가 가득 찼다 — 넓히면 더 둘 수 있다'
       : '다음 글자 ' + U.secs(left);
     if (!elSpawnPop.classList.contains('hidden')) renderSpawnPop();
-    if (!elTicketPop.classList.contains('hidden')) renderTicketPop();
+    if (!elStatsPop.classList.contains('hidden')) renderStatsPop();
+    renderCodexShop();
     if (popEnt) renderPayLine();
     if (chipEdge) updateChip();
   }
@@ -247,7 +256,7 @@ G.ui = (function () {
   }
 
   /* ------------------------------------------------------------------
-     힌트권 구매창
+     힌트권 구매 — 도감 머리글 바로 아래
      ------------------------------------------------------------------ */
   function buildTicketButtons() {
     var html = '';
@@ -265,16 +274,20 @@ G.ui = (function () {
     }
   }
 
-  function openTicketPop() {
-    closePopovers();
-    elTicketPop.classList.remove('hidden');
-    elMoney.classList.add('tipoff');
-    renderTicketPop();
+  function toggleCodexShop() {
+    if (elCodexShop.classList.contains('hidden')) {
+      toggleCodex(true);
+      elCodexShop.classList.remove('hidden');
+      renderCodexShop();
+    } else {
+      elCodexShop.classList.add('hidden');
+    }
   }
 
-  function renderTicketPop() {
-    elTicketPop.querySelector('.tk-have').textContent = G.state.tickets + '장';
-    elTicketPop.querySelector('.tk-next b').textContent = U.money(C.TICKET_STEP);
+  function renderCodexShop() {
+    if (!elCodexShop || elCodexShop.classList.contains('hidden')) return;
+    var stepEl = elCodexShop.querySelector('.tk-step');
+    if (stepEl) stepEl.textContent = U.money(C.TICKET_STEP);
     var bs = elTicketBuys.querySelectorAll('.tk-b');
     for (var i = 0; i < bs.length; i++) {
       var n = +bs[i].dataset.n, cost = G.ticketPack(n);
@@ -288,8 +301,41 @@ G.ui = (function () {
     if (!G.board.spend(cost)) { toast('돈이 부족하다'); return; }
     G.state.tickets += n;
     G.state.ticketsBought += n;
-    renderTicketPop();
+    renderCodexShop();
     renderCodex();
+  }
+
+  /* ------------------------------------------------------------------
+     통계 — 재화를 누르면 열린다
+     ------------------------------------------------------------------ */
+  function openStatsPop() {
+    closePopovers();
+    elStatsPop.classList.remove('hidden');
+    elMoney.classList.add('tipoff');
+    renderStatsPop();
+  }
+
+  function renderStatsPop() {
+    if (!elStatsPop || elStatsPop.classList.contains('hidden')) return;
+    var perMin = Math.round(G.board.payRate() * (60 / C.PAY_PERIOD));
+    elStatsPop.querySelector('.st-rate').textContent = U.money(perMin);
+    elStatsPop.querySelector('.st-total').textContent = U.money(G.state.totalEarned || 0);
+    elStatsPop.querySelector('.st-spent').textContent = U.money(G.state.totalSpent || 0);
+
+    var words = G.board.words().slice();
+    words.sort(function (a, b) { return b.rate() - a.rate(); });
+    var html = '', shown = 0, i, e, r;
+    for (i = 0; i < words.length && shown < 1; i++) {
+      e = words[i];
+      r = e.rate();
+      if (!(r > 0)) continue;
+      html += '<div class="st-top">' +
+        '<b style="color:' + (e.def.color.fg || '') + '">' + e.text + '</b>' +
+        '<span>' + U.money(Math.round(r * (60 / C.PAY_PERIOD))) + '/분</span></div>';
+      shown++;
+    }
+    if (!html) html = '<div class="st-empty">아직 버는 단어가 없다</div>';
+    elStatsPop.querySelector('.st-tops').innerHTML = html;
   }
 
   /** 단어를 더블클릭하면 그 단어의 뜻을 보여준다 */
@@ -341,6 +387,31 @@ G.ui = (function () {
       closePopovers();
     };
 
+    /* BOX — 기본 벌이 없음. 넣은 글자 수와 쌓인 돈만 보여 준다.
+       BANK 금고는 만기를 기다리지 않고 원금만 당장 찾을 수 있다. */
+    var claim = elWordPop.querySelector('.wp-claim');
+    var claimN = 0, claimKind = '';
+    if (ent.text === 'BANK') {
+      claimN = Math.round(G.state.vault || 0);
+      if (claimN > 0) claimKind = 'bank';
+    }
+    if (claimKind) {
+      claim.classList.remove('hidden');
+      claim.disabled = false;
+      claim.textContent = '찾기 ' + U.money(claimN);
+      claim.onclick = function (ev) {
+        ev.stopPropagation();
+        if (!G.board.get(ent.id)) { closePopovers(); return; }
+        var pay = G.behaviors.claimVault(ent);
+        if (pay > 0) G.ui.toast('금고에서 <b>' + U.money(pay) + '</b> 을 찾았다 · 이자는 만기까지');
+        closePopovers();
+      };
+    } else {
+      claim.classList.add('hidden');
+      claim.disabled = false;
+      claim.onclick = null;
+    }
+
     elWordPop.classList.remove('hidden');
     var w = elWordPop.offsetWidth, h = elWordPop.offsetHeight;
     elWordPop.style.left = U.clamp(cx - w / 2, 8, window.innerWidth - w - 8) + 'px';
@@ -358,18 +429,31 @@ G.ui = (function () {
   function renderPayLine() {
     if (!popEnt) return;
     if (!G.board.get(popEnt.id)) { closePopovers(); return; }
+
+    /* BOX 는 기본 벌이가 없다 — 넣은 글자 수와 쌓인 돈만 */
+    if (popEnt.text === 'BOX') {
+      var n = ((popEnt.data && popEnt.data.kept) || '').length;
+      var slots = G.behaviors.boxSlots(popEnt);
+      var stored = Math.round((popEnt.data && popEnt.data.stored) || 0);
+      elWordPop.querySelector('.wp-pay').textContent =
+        n + '/' + slots + '개 · ' + U.money(stored) + ' 쌓임';
+      return;
+    }
+
     var sec = Math.max(1, Math.round(C.PAY_PERIOD / popEnt.haste()));
     var v = popEnt.income();
     /* 실제로 넣어 주는 액수와 같은 식으로 반올림한다 (entity.update) */
-    elWordPop.querySelector('.wp-pay').textContent =
-      sec + '초마다 ' + U.money(v > 0 ? Math.max(1, Math.round(v)) : 0);
+    var line = sec + '초마다 ' + U.money(v > 0 ? Math.max(1, Math.round(v)) : 0);
+    var worth = popEnt.data && popEnt.data.worth;
+    if (worth) line += ' · 값 ' + U.pct(worth);
+    elWordPop.querySelector('.wp-pay').textContent = line;
   }
 
   function closePopovers() {
     popEnt = null;
     elSpawnPop.classList.add('hidden');
     elWordPop.classList.add('hidden');
-    elTicketPop.classList.add('hidden');
+    elStatsPop.classList.add('hidden');
     elGauge.classList.remove('tipoff');
     elMoney.classList.remove('tipoff');
   }
@@ -469,6 +553,7 @@ G.ui = (function () {
     elCodex.classList.toggle('open', open);
     elCodexTab.classList.toggle('open', open);
     if (open) renderCodex();
+    else elCodexShop.classList.add('hidden');
   }
 
   /* 손잡이 드래그 — 서랍이 손가락을 그대로 따라온다 */
@@ -603,7 +688,8 @@ G.ui = (function () {
     if (!need) return;
     if (G.state.tickets < need) {
       toast('힌트권이 ' + (need - G.state.tickets) + '장 모자라다');
-      openTicketPop();
+      if (elCodexShop.classList.contains('hidden')) toggleCodexShop();
+      else renderCodexShop();
       return;
     }
     G.state.tickets -= need;
@@ -627,6 +713,48 @@ G.ui = (function () {
     if (elIdleVeil) elIdleVeil.classList.toggle('hidden', !on);
   }
 
+  /**
+   * PEN 을 버렸을 때 — 원하는 알파벳 하나를 고른다.
+   * Esc 로 취소하면 펜을 보드에 되돌려 준다 (자리가 있을 때).
+   */
+  function openPenPick() {
+    if (!elPenVeil) return;
+    penPicking = true;
+    closePopovers();
+    elPenVeil.classList.remove('hidden');
+  }
+
+  function closePenPick() {
+    penPicking = false;
+    if (elPenVeil) elPenVeil.classList.add('hidden');
+  }
+
+  function onPenKey(ev) {
+    if (!penPicking) return;
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      closePenPick();
+      if (G.board.count() < G.maxEntities()) {
+        G.board.makeWord('PEN', playEl.clientWidth / 2, playEl.clientHeight / 2);
+        toast('<b>PEN</b> 을 되돌렸다');
+        return;
+      }
+      G.ui.toast('자리가 없어 <b>PEN</b> 을 되돌리지 못했다');
+      return;
+    }
+    var ch = (ev.key || '').toUpperCase();
+    if (!/^[A-Z]$/.test(ch)) return;
+    ev.preventDefault();
+    if (G.board.count() >= G.maxEntities()) {
+      toast('보드가 가득 차 있다');
+      return;
+    }
+    closePenPick();
+    var L = G.board.spawnLetter(ch);
+    G.fx.burst(L.x, L.y, '90,120,160', 16, 90);
+    toast('<b>' + ch + '</b> 를 얻었다');
+  }
+
   function syncOptions() {
     document.getElementById('optFx').checked = G.state.opt.fx;
     document.getElementById('optSnapHint').checked = G.state.opt.snapHint;
@@ -637,6 +765,8 @@ G.ui = (function () {
     closePopovers: closePopovers, showWordPop: showWordPop,
     renderCodex: renderCodex, toggleCodex: toggleCodex,
     setPausedUI: setPausedUI, setIdleUI: setIdleUI,
+    openPenPick: openPenPick, closePenPick: closePenPick,
+    get penPicking() { return penPicking; },
     hideIntro: hideIntro, showIntro: showIntro,
     syncOptions: syncOptions, hideChip: hideChip
   };

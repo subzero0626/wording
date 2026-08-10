@@ -283,7 +283,7 @@ console.log('\n\n한 단어에 능력 하나\n');
   console.log('  같은 단어를 겹쳐 세우면       ' + rows.join(' · '));
 
   /* 겹치지 않는 것은 "같은 단어끼리" 다. 종류가 다르면 그대로 곱해져야 한다 —
-     숯을 물린 불(×3)에 달을 세우면 ×3.75 까지 가고, 상한(×4)에 걸리지 않는다 */
+     숯을 물린 불(+200%)에 달을 세우면 +275% 까지 간다 */
   const read = () => {
     clear();
     const f = G.board.makeWord('FIRE', 220, 140);
@@ -300,7 +300,7 @@ console.log('\n\n한 단어에 능력 하나\n');
   const f = read();
   console.log('  숯 물린 불에 달까지 세우면    ×' + f.incomeMul.toFixed(2) +
     ' (숯 ×' + C.COAL_PAIR + ' × 달 ×' + C.MOON_INCOME + ' = ×' +
-    (C.COAL_PAIR * C.MOON_INCOME).toFixed(2) + ' · 상한 ×' + C.INCOME_CAP + ')');
+    (C.COAL_PAIR * C.MOON_INCOME).toFixed(2) + ')');
 }
 
 /* 은행 — 떼어 두었다가 한 주기마다 이자를 얹어 돌려준다 */
@@ -325,15 +325,15 @@ console.log('\n\n한 단어에 능력 하나\n');
   G.state.vault = 0; G.state.vaultT = 0;
 }
 
-/* 정원이 찬 보드에서 단어를 분해하면 */
+/* 정원이 찬 보드에서도 단어를 분해할 수 있다 — 고칠 길이 막히면 안 된다 */
 {
   clear();
   const w = G.board.makeWord('CRATE', 220, 140);
   while (G.board.count() < G.maxEntities()) G.board.spawnLetter('Q');
   const before = G.board.count();
   const ok = G.board.explode(w);
-  console.log('  가득 찬 보드에서 분해하면     ' + (ok ? '흩어진다 (문제)' : '막혀 있다') +
-    ' · ' + G.board.count() + '/' + G.maxEntities() + '개');
+  console.log('  가득 찬 보드에서 분해하면     ' + (ok ? '흩어진다' : '막혀 있다 (문제)') +
+    ' · ' + before + ' → ' + G.board.count() + '/' + G.maxEntities() + '개');
   clear();
   const w2 = G.board.makeWord('CRATE', 220, 140);
   G.board.explode(w2);
@@ -361,7 +361,7 @@ console.log('\n\n한 단어에 능력 하나\n');
   clear();
   const t = G.board.makeWord('TREE', 220, 140);
   t.ignite();
-  for (let i = 0; i < 30 * (C.BURN_COLLAPSE + 4); i++) G.board.step(DT);
+  for (let i = 0; i < 30 * (C.BURN_LIFE + 4); i++) G.board.step(DT);
   console.log('  다 타고 나면                 남은 것 ' + G.board.count() +
     '개 (글자로 흩어지면 4개)');
 }
@@ -599,9 +599,9 @@ for (const [a, b] of [['BEE', 'TREE'], ['MEAT', 'FIRE'], ['FISH', 'WATER'],
   const run = (fence) => {
     clear();
     if (fence) {
-      const probe = G.board.makeWord('WALL', mid, 20), h = probe.h;
+      const probe = G.board.makeWord('ROCK', mid, 20), h = probe.h;
       G.board.remove(probe);
-      for (let y = h / 2; y < b.h + h; y += h - 2) G.board.makeWord('WALL', mid, y);
+      for (let y = h / 2; y < b.h + h; y += h - 2) G.board.makeWord('ROCK', mid, y);
     }
     const bird = G.board.makeWord('BIRD', mid - 90, b.h / 2);
     let over = 0;
@@ -808,15 +808,14 @@ function stack(target, mates) {
   }
   return G.board.get(t.id) ? [t.incomeMul, t.gearMul] : [0, 1];
 }
-console.log('    (상한 ×' + C.INCOME_CAP + ' — 톱니 배수만 이 상한 밖에서 곱해진다)');
+console.log('    (벌이 배수 상한 없음 — 자리마다 그대로 곱한다)');
 for (const [name, target, mates] of [
   ['보석 하나에 다 붙이기', 'DIAMOND', ['MOON', 'LUCK']],
   ['익힌 고기에 다 붙이기', 'MEAT', ['FIRE', 'COAL', 'MOON', 'LUCK']],
   ['금덩이에 다 붙이기', 'GOLD', ['MOON', 'LUCK', 'SUN']]
 ]) {
   const [raw, gear] = stack(target, mates);
-  console.log('    ' + name.padEnd(22) + '쌓인 배수 ×' + (raw * gear).toFixed(1) +
-    '  →  실제 ×' + (Math.min(raw, C.INCOME_CAP) * gear).toFixed(1));
+  console.log('    ' + name.padEnd(22) + '실제 배수 ×' + (raw * gear).toFixed(1));
 }
 
 /* 사건으로 들어오는 돈.

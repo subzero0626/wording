@@ -114,9 +114,15 @@ button{
   transition:width .08s linear;
 }
 #snaphint.waiting .sh-p{ background:var(--ink-3); }
-/* 강화대 위 — 잃을 수도 있는 일이라 색으로 먼저 알린다 */
-#snaphint.risky{ color:#7a4f9c; border-color:rgba(122,79,156,.5); border-style:solid; }
-#snaphint.risky .sh-p{ background:#7a4f9c; }
+/* 강화대 위 — 테두리 없이 성공/실패 % 만 */
+#snaphint.forge{
+  border:none; box-shadow:none; background:rgba(253,252,250,.88);
+  color:inherit;
+}
+#snaphint.forge .sh-p{ background:var(--ink-3); }
+#snaphint .up-ok{ color:#2f8a4e; font-weight:700; }
+#snaphint .up-bad{ color:#c4453a; font-weight:700; }
+#snaphint .up-sep{ color:var(--ink-3); font-weight:500; margin:0 .15em; }
 
 /* 보드 밖으로 끌어냈을 때 */
 /* 판매 대기 중인 글자 */
@@ -291,11 +297,11 @@ button{
 /* 강화 별 — 글자 왼쪽 위 모서리에 비스듬히 붙는다.
    숫자로 "3강" 이라 적으면 보드가 계산표가 되므로 별의 개수로만 알린다 */
 .ent .stars{
-  position:absolute; right:calc(100% - 7px); bottom:calc(100% - 8px);
-  display:flex; gap:1px; pointer-events:none;
+  position:absolute; left:2px; top:2px;
+  display:flex; gap:2px; pointer-events:none;
 }
 .ent .stars i{
-  width:7px; height:7px; display:block;
+  width:12px; height:12px; display:block;
   background:linear-gradient(160deg, #f0d886, #c99a2e);
   clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
   filter:drop-shadow(0 1px 1px rgba(70,50,10,.35));
@@ -339,16 +345,25 @@ button{
 .token:hover{ transform:scale(1.12); }
 .token.gone{ animation:dying .25s ease-in forwards; }
 
-/* STAR 가 떨군 힌트권 — 도감 머리글의 알약과 같은 초록으로 맞춰,
-   주우면 저 숫자가 오른다는 것이 색만 보고도 이어지게 한다 */
+/* STAR 가 떨군 힌트권 — 길쭉하고 작게, 회색, 약 30° 기울임 */
 .token.ticket{
-  background:linear-gradient(180deg,#f0faf4,#d6ecdf);
-  border-color:#8dbba4; color:#2f6b52;
+  width:36px; height:12px; border-radius:0;
+  background:transparent; border:none; box-shadow:none;
+  color:#6e6a64;
+  transform:rotate(-30deg);
+  animation:ticketIn .3s cubic-bezier(.2,1.5,.4,1);
 }
-.token.ticket svg{ width:21px; height:14px; overflow:visible; }
-.token.ticket .tk-face{ fill:currentColor; }
-.token.ticket .tk-perf{
-  stroke:#f0faf4; stroke-width:1.5; stroke-linecap:round; stroke-dasharray:1.6 2.4;
+@keyframes ticketIn{
+  from{ transform:scale(.35) rotate(-30deg); opacity:0; }
+  to{ transform:rotate(-30deg); opacity:1; }
+}
+.token.ticket:hover{ transform:scale(1.12) rotate(-30deg); }
+.token.ticket svg{ width:36px; height:12px; display:block; overflow:visible; }
+.token.ticket .tk-face{
+  fill:#e6e4df; stroke:#9a968e; stroke-width:1.3;
+}
+.token.ticket .tk-hole{
+  fill:#7a766e; opacity:.9;
 }
 
 /* SHOP 이 흘린 잔돈 — 재화 색을 그대로 써서 돈이라는 것이 바로 읽히게 한다 */
@@ -436,9 +451,9 @@ button{
 }
 .float-money.small{ font-size:12.5px; font-weight:650; opacity:.62; }
 @keyframes floatUp{
-  0%{ opacity:0; transform:translateY(4px); }
+  0%{ opacity:0; transform:translate(-50%, 4px); }
   20%{ opacity:1; }
-  100%{ opacity:0; transform:translateY(-26px); }
+  100%{ opacity:0; transform:translate(-50%, -36px); }
 }
 
 /* 말풍선 — 브라우저 기본 title 은 반 초 뒤에야 뜨고 생김새도 이 화면과 겉돈다.
@@ -494,30 +509,34 @@ button{
 .pop button:active{ transform:scale(.98); }
 .pop button:disabled{ background:#d9d5cd; color:#8e8a83; cursor:default; }
 
-/* 힌트권 구매창 — 재화 바로 아래에 매단다 */
-#ticketPop{ right:14px; top:56px; min-width:212px; }
-#ticketPop .tk-head{ display:flex; align-items:baseline; gap:8px; }
-#ticketPop .tk-t{ font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.03em; }
-#ticketPop .tk-have{
-  margin-left:auto; font-size:13px; font-weight:750; color:var(--money);
+/* 통계 — 재화 바로 아래에 매단다 */
+#statsPop{ right:14px; top:56px; min-width:220px; }
+#statsPop .st-head{
+  font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.03em;
+  margin-bottom:8px;
+}
+#statsPop .st-row{
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+  padding:5px 0; font-size:12px; color:var(--ink-2);
+  border-bottom:1px solid var(--line);
+}
+#statsPop .st-row b{
+  font-size:13px; font-weight:750; color:var(--ink);
   font-variant-numeric:tabular-nums;
 }
-#ticketPop .tk-note{ margin-top:5px; font-size:10.5px; color:var(--ink-3); line-height:1.5; }
-#ticketPop .tk-buys{ display:flex; gap:6px; margin:11px 0 9px; }
-#ticketPop .tk-b{
-  flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
-  padding:8px 0 7px; border-radius:9px;
-  background:var(--accent); color:#fff;
+#statsPop .st-sub{
+  margin:12px 0 6px; font-size:10.5px; font-weight:650;
+  color:var(--ink-3); letter-spacing:.04em;
 }
-#ticketPop .tk-b b{ font-size:12.5px; font-weight:700; }
-#ticketPop .tk-b span{ font-size:10px; opacity:.82; font-variant-numeric:tabular-nums; }
-#ticketPop .tk-b:disabled{ background:#d9d5cd; color:#8e8a83; }
-#ticketPop .tk-b:disabled span{ opacity:1; }
-#ticketPop .tk-next{
-  font-size:10.5px; color:var(--ink-3); text-align:center;
-  font-variant-numeric:tabular-nums;
+#statsPop .st-top{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  padding:4px 0; font-size:12.5px;
 }
-#ticketPop .tk-next b{ color:var(--ink-2); font-weight:650; }
+#statsPop .st-top b{ font-weight:750; letter-spacing:.06em; }
+#statsPop .st-top span{
+  font-size:11px; color:var(--ink-2); font-variant-numeric:tabular-nums;
+}
+#statsPop .st-empty{ font-size:11.5px; color:var(--ink-3); padding:4px 0 2px; }
 
 #money{ cursor:pointer; }
 
@@ -547,6 +566,10 @@ button{
   font-size:11px; color:var(--money); font-weight:650; margin-bottom:11px;
   font-variant-numeric:tabular-nums;
 }
+#wordPop .wp-acts{ display:flex; gap:6px; }
+#wordPop .wp-acts button{ flex:1; }
+#wordPop .wp-claim{ background:var(--money); color:#fff; }
+#wordPop .wp-claim.hidden{ display:none; }
 #wordPop .wp-break{ background:#efece6; color:var(--ink-2); }
 
 /* --------------------------------------------------------------------------
@@ -595,6 +618,36 @@ button{
 #codex h2{ margin:0; font-size:15px; font-weight:700; letter-spacing:.06em; }
 #codexCount{ font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
 #codexClose{ margin-left:auto; font-size:13px; color:var(--ink-3); padding:2px 4px; }
+
+/* 도감 머리글 바로 아래 힌트권 구매 — 통계 팝과 같은 결 */
+#codexShop{
+  flex:none;
+  margin:10px 12px 4px;
+  padding:14px 16px;
+  background:rgba(253,252,250,.98);
+  border:1px solid var(--line-2);
+  border-radius:14px;
+  box-shadow:var(--shadow-m);
+  animation:popIn .16s cubic-bezier(.2,1.3,.4,1);
+}
+#codexShop .st-head{
+  font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.03em;
+  margin-bottom:10px;
+}
+#codexShop .tk-buys{ display:flex; gap:6px; margin:0 0 8px; }
+#codexShop .tk-b{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+  padding:8px 0 7px; border-radius:9px;
+  background:var(--accent); color:#fff; border:none; cursor:pointer;
+}
+#codexShop .tk-b b{ font-size:12.5px; font-weight:700; }
+#codexShop .tk-b span{ font-size:10px; opacity:.82; font-variant-numeric:tabular-nums; }
+#codexShop .tk-b:disabled{ background:#d9d5cd; color:#8e8a83; }
+#codexShop .tk-b:disabled span{ opacity:1; }
+#codexShop .tk-note{
+  font-size:10.5px; color:var(--ink-3); line-height:1.45;
+}
+#codexShop .tk-note b{ color:var(--ink-2); font-weight:650; }
 #codexClose:hover{ color:var(--ink); }
 #codexList{ flex:1; overflow-y:auto; padding:10px 12px 20px; }
 
@@ -784,6 +837,28 @@ button{
   animation:breathe 3.4s ease-in-out infinite;
 }
 #idleVeil .tiny{ margin:3px 0; color:var(--ink-3); }
+
+/* PEN — 원하는 글자 고르기 */
+#penVeil{
+  position:absolute; inset:0; z-index:85;
+  background:rgba(246,244,240,.78);
+  backdrop-filter:blur(2px);
+  display:flex; align-items:center; justify-content:center;
+  animation:popIn .25s ease-out;
+}
+#penVeil .pen-inner{ text-align:center; pointer-events:none; }
+#penVeil h1{
+  margin:0 0 10px; font-size:20px; font-weight:750;
+  letter-spacing:.28em; color:#3d5a80;
+}
+#penVeil p{ margin:4px 0; color:var(--ink); font-size:15px; font-weight:650; }
+#penVeil .tiny{ color:var(--ink-3); font-size:12px; font-weight:500; }
+#penVeil .pen-cursor{
+  margin-top:18px; font-size:28px; font-weight:700; color:#3d5a80;
+  letter-spacing:.05em;
+  animation:penBlink 1s steps(1) infinite;
+}
+@keyframes penBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.15; } }
 @keyframes breathe{
   0%,100%{ opacity:.45; }
   50%{ opacity:.95; }

@@ -28,6 +28,19 @@ G.game = (function () {
       if (!G.state.opt) G.state.opt = { fx: true, snapHint: true };
       if (G.state.opt.fx === undefined) G.state.opt.fx = true;
       if (G.state.opt.snapHint === undefined) G.state.opt.snapHint = true;
+      /* WALL → ROCK 이름만 바뀜 — 발견한 기록도 이어받는다 */
+      if (G.state.discovered && G.state.discovered.WALL) {
+        G.state.discovered.ROCK = true;
+        delete G.state.discovered.WALL;
+      }
+      if (G.state.madeWords && G.state.madeWords.WALL) {
+        G.state.madeWords.ROCK = (G.state.madeWords.ROCK || 0) + G.state.madeWords.WALL;
+        delete G.state.madeWords.WALL;
+      }
+      if (G.state.hints && G.state.hints.WALL) {
+        G.state.hints.ROCK = G.state.hints.WALL;
+        delete G.state.hints.WALL;
+      }
       G.util.seedUid(saved.uid || 0);
     }
 
@@ -134,7 +147,7 @@ G.game = (function () {
     if (dt > 0.1) dt = 0.1;          // 탭 전환 등으로 인한 큰 점프 방지
     if (dt <= 0) return;
 
-    if (!paused && !awayAt) {
+    if (!paused && !awayAt && !G.ui.penPicking) {
       idleAcc += dt;
       if (idleAcc >= C.IDLE_AFTER) { sleepBoard(false); return; }
 
