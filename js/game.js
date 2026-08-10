@@ -73,6 +73,9 @@ G.game = (function () {
 
     if (document.hidden) { awayAt = Date.now(); awayByHide = true; }
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', function () {
+      if (!document.hidden) wakeBoard();
+    });
     window.addEventListener('beforeunload', function () { G.save.write(); });
 
     var acts = ['pointerdown', 'pointermove', 'wheel', 'keydown'];
@@ -118,6 +121,7 @@ G.game = (function () {
   function wakeBoard() {
     idleAcc = 0;
     last = performance.now();        // 재워 둔 시간이 한꺼번에 흐르지 않게
+    awayByHide = false;
     if (!awayAt) return;
     var at = awayAt;
     awayAt = 0;
@@ -128,9 +132,15 @@ G.game = (function () {
 
   /** 조작이 있었다 — 재워 둔 보드라면 깨운다 */
   function onActivity() {
-    if (awayAt && awayByHide) return;   // 탭 복귀는 visibilitychange 가 맡는다
-    if (awayAt) wakeBoard();
-    else idleAcc = 0;
+    if (awayAt) {
+      /* 탭을 나갔다가 이미 돌아온 뒤 visibility 이벤트를 놓치면
+         awayByHide 가 남은 채로 클릭이 무시되어 보드가 영영 멈춘다.
+         화면이 보이는 상태면 조작으로 깨운다. */
+      if (awayByHide && document.hidden) return;
+      wakeBoard();
+      return;
+    }
+    idleAcc = 0;
   }
 
   function onVisibility() {
@@ -152,15 +162,17 @@ G.game = (function () {
 
     if (!paused && !awayAt && !G.ui.penPicking) {
       idleAcc += dt;
-      if (idleAcc >= C.IDLE_AFTER) { sleepBoard(false); return; }
-
-      G.state.playTime = (G.state.playTime || 0) + dt;
-      stepSpawn(dt);
-      G.drag.tick(dt);
-      G.board.step(dt);
-      G.fx.update(dt);
-      saveAcc += dt;
-      if (saveAcc > 6) { saveAcc = 0; G.save.write(); }
+      if (idleAcc >= C.IDLE_AFTER) {
+        sleepBoard(false);
+      } else {
+        G.state.playTime = (G.state.playTime || 0) + dt;
+        stepSpawn(dt);
+        G.drag.tick(dt);
+        G.board.step(dt);
+        G.fx.update(dt);
+        saveAcc += dt;
+        if (saveAcc > 6) { saveAcc = 0; G.save.write(); }
+      }
     }
     G.fx.render();
     G.ui.tick();
