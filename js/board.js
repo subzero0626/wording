@@ -25,15 +25,33 @@ G.board = (function () {
     window.addEventListener('resize', function () { layout(); });
   }
 
+  /**
+   * 좁은 화면에서는 #app 전체를 줄여 데스크톱과 같은 비율로 보이게 한다.
+   * 레이아웃은 1/scale 만큼 넓어지고, transform 으로 화면에 맞춘다.
+   */
+  function updateAppScale() {
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var s = 1;
+    if (vw < 820 || vh < 580) {
+      s = Math.min(vw / 720, vh / 640);
+      s = U.clamp(s, 0.55, 0.9);
+    }
+    document.documentElement.style.setProperty(
+      '--app-scale', (Math.round(s * 1000) / 1000).toFixed(3));
+  }
+
   function available() {
     var bw = boardEl.clientWidth, bh = boardEl.clientHeight;
+    var margin = C.BOARD_MARGIN;
+    if (U.appScale() < 0.95) margin = Math.round(margin * 0.7);
     return {
-      w: Math.max(320, bw - C.BOARD_MARGIN * 2 - 44),
-      h: Math.max(280, bh - C.BOARD_MARGIN * 2 - 46)
+      w: Math.max(280, bw - margin * 2 - 44),
+      h: Math.max(240, bh - margin * 2 - 46)
     };
   }
 
   function layout(animateShift) {
+    updateAppScale();
     var a = available();
     var s = C.EXPAND_SCALE[Math.min(G.state.expandLevel, C.EXPAND_SCALE.length - 1)];
     var nw = Math.round(a.w * s), nh = Math.round(a.h * s);

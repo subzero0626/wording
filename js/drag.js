@@ -48,8 +48,7 @@ G.drag = (function () {
   }
 
   function localPoint(ev) {
-    var r = playEl.getBoundingClientRect();
-    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    return U.screenToPlay(playEl, ev.clientX, ev.clientY);
   }
 
   /* ------------------------------------------------------------------ */

@@ -187,14 +187,15 @@ G.ui = (function () {
   /** @param small 낱글자처럼 잦은 지급은 작고 옅게 */
   function floatMoney(x, y, amount, small) {
     if (!G.state.opt.fx && small) return;
-    var r = playEl.getBoundingClientRect();
+    var scr = U.playToScreen(playEl, x, y - 20);
+    var loc = U.screenToApp(scr.x, scr.y);
     var d = document.createElement('div');
     d.className = 'float-money' + (small ? ' small' : '');
     var neg = amount < 0;
     d.textContent = (neg ? '-' : '+') + U.num(Math.abs(amount));   // 단위 없이 숫자만
     if (neg) d.style.color = '#b4544a';
-    d.style.left = (r.left + x) + 'px';
-    d.style.top = (r.top + y - 20) + 'px';
+    d.style.left = loc.x + 'px';
+    d.style.top = loc.y + 'px';
     d.style.transform = 'translateX(-50%)';
     appEl.appendChild(d);
     setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 1150);
@@ -414,8 +415,11 @@ G.ui = (function () {
 
     elWordPop.classList.remove('hidden');
     var w = elWordPop.offsetWidth, h = elWordPop.offsetHeight;
-    elWordPop.style.left = U.clamp(cx - w / 2, 8, window.innerWidth - w - 8) + 'px';
-    elWordPop.style.top = U.clamp(cy + 22, 8, window.innerHeight - h - 8) + 'px';
+    var s = U.appScale();
+    var aw = window.innerWidth / s, ah = window.innerHeight / s;
+    var p = U.screenToApp(cx, cy);
+    elWordPop.style.left = U.clamp(p.x - w / 2, 8, aw - w - 8) + 'px';
+    elWordPop.style.top = U.clamp(p.y + 22, 8, ah - h - 8) + 'px';
   }
   var popToken = 0;
   var popEnt = null;
@@ -473,6 +477,7 @@ G.ui = (function () {
     }
     var r = playEl.getBoundingClientRect();
     var x = ev.clientX, y = ev.clientY;
+    var s = U.appScale();
 
     /* 경계에서 너무 멀면(안쪽 깊숙이든 바깥이든) 보여주지 않는다 */
     if (x < r.left - BAND || x > r.right + BAND ||
@@ -492,25 +497,29 @@ G.ui = (function () {
     updateChip();       // 글자 수가 바뀌면 칩 폭도 바뀌므로 재기 전에 먼저 채운다
 
     /* 칩은 반드시 놀이영역 **바깥**에 통째로 놓는다.
-       가운데 기준으로 놓이니 절반 너비만큼 더 밀어내야 테두리를 넘지 않는다.
-       고정값으로 밀면 좌우에서는 칩의 안쪽 절반이 판 위로 올라와
-       가장자리에 놓인 글자를 덮고 클릭까지 가로챈다. */
+       좌표는 #app 레이아웃 기준 (모바일 scale 보정). */
     var hw = (elChip.offsetWidth || 96) / 2 + CHIP_GAP;
     var hh = (elChip.offsetHeight || 30) / 2 + CHIP_GAP;
+    var aw = window.innerWidth / s, ah = window.innerHeight / s;
+    var rA = {
+      left: r.left / s, right: r.right / s,
+      top: r.top / s, bottom: r.bottom / s
+    };
+    var xA = x / s, yA = y / s;
 
     var cx, cy;
-    if (best.e === 'top') { cx = x; cy = r.top - hh; }
-    else if (best.e === 'bottom') { cx = x; cy = r.bottom + hh; }
-    else if (best.e === 'left') { cx = r.left - hw; cy = y; }
-    else { cx = r.right + hw; cy = y; }
+    if (best.e === 'top') { cx = xA; cy = rA.top - hh; }
+    else if (best.e === 'bottom') { cx = xA; cy = rA.bottom + hh; }
+    else if (best.e === 'left') { cx = rA.left - hw; cy = yA; }
+    else { cx = rA.right + hw; cy = yA; }
 
     /* 화면 밖으로 나가지 않게 하되, 그러다 판 위로 되밀리지는 않게 */
-    cx = U.clamp(cx, hw, Math.max(hw, window.innerWidth - hw));
-    cy = U.clamp(cy, hh, Math.max(hh, window.innerHeight - hh));
-    if (best.e === 'top') cy = Math.min(cy, r.top - hh);
-    else if (best.e === 'bottom') cy = Math.max(cy, r.bottom + hh);
-    else if (best.e === 'left') cx = Math.min(cx, r.left - hw);
-    else cx = Math.max(cx, r.right + hw);
+    cx = U.clamp(cx, hw, Math.max(hw, aw - hw));
+    cy = U.clamp(cy, hh, Math.max(hh, ah - hh));
+    if (best.e === 'top') cy = Math.min(cy, rA.top - hh);
+    else if (best.e === 'bottom') cy = Math.max(cy, rA.bottom + hh);
+    else if (best.e === 'left') cx = Math.min(cx, rA.left - hw);
+    else cx = Math.max(cx, rA.right + hw);
 
     elChip.style.left = Math.round(cx) + 'px';
     elChip.style.top = Math.round(cy) + 'px';
@@ -576,7 +585,7 @@ G.ui = (function () {
 
   function onCodexDrag(ev) {
     if (!cdOn) return;
-    var d = ev.clientX - cdFrom;
+    var d = (ev.clientX - cdFrom) / U.appScale();
     if (Math.abs(d) > 3) cdMoved = true;
     cdX = U.clamp((cdOpen ? cdW : 0) + d, 0, cdW);
     elCodex.style.transform = 'translateX(calc(-100% + ' + cdX.toFixed(1) + 'px))';

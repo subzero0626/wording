@@ -13,6 +13,39 @@ G.util = (function () {
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function chance(p) { return Math.random() < p; }
 
+  /** #app 의 CSS --app-scale (모바일에서 1 미만) */
+  function appScale() {
+    var s = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--app-scale'));
+    return s > 0 ? s : 1;
+  }
+
+  /** 화면(client) 좌표 → #app 레이아웃 좌표 */
+  function screenToApp(clientX, clientY) {
+    var s = appScale();
+    return { x: clientX / s, y: clientY / s };
+  }
+
+  /** 화면 → 놀이영역 로컬 (transform/scale 이 있어도 맞춘다) */
+  function screenToPlay(playEl, clientX, clientY) {
+    var r = playEl.getBoundingClientRect();
+    var rw = r.width || 1, rh = r.height || 1;
+    return {
+      x: (clientX - r.left) * (playEl.clientWidth / rw),
+      y: (clientY - r.top) * (playEl.clientHeight / rh)
+    };
+  }
+
+  /** 놀이영역 로컬 → 화면 */
+  function playToScreen(playEl, x, y) {
+    var r = playEl.getBoundingClientRect();
+    var cw = playEl.clientWidth || 1, ch = playEl.clientHeight || 1;
+    return {
+      x: r.left + x * (r.width / cw),
+      y: r.top + y * (r.height / ch)
+    };
+  }
+
   function dist(ax, ay, bx, by) {
     var dx = ax - bx, dy = ay - by;
     return Math.sqrt(dx * dx + dy * dy);
@@ -90,6 +123,8 @@ G.util = (function () {
     dist: dist, dist2: dist2, weightedPick: weightedPick,
     uid: uid, seedUid: seedUid, currentUid: currentUid,
     num: num, money: money, secs: secs, mul: mul, pct: pct, overlap: overlap,
-    easeOutCubic: easeOutCubic, easeInOut: easeInOut, el: el
+    easeOutCubic: easeOutCubic, easeInOut: easeInOut, el: el,
+    appScale: appScale, screenToApp: screenToApp,
+    screenToPlay: screenToPlay, playToScreen: playToScreen
   };
 })();
