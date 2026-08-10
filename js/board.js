@@ -11,6 +11,10 @@ G.board = (function () {
   var ents = [];
   var byId = {};
   var W = 0, H = 0;
+  /* 로드 직후 크기가 안정되기 전에는 클램프하지 않는다.
+     잠깐 작은 H 로 잘라 내면, 다시 커져도 잘린 좌표는 돌아오지 않고
+     매 새로고침마다 글자가 가운데·위로 끌린다. */
+  var freezeClamp = false;
 
   /* ------------------------------------------------------------------
      초기화 / 레이아웃
@@ -22,7 +26,11 @@ G.board = (function () {
     fxEl = document.getElementById('fx');
     G.fx.init(fxEl);
     layout();
-    window.addEventListener('resize', function () { layout(); });
+    var resizeT = 0;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeT);
+      resizeT = setTimeout(function () { layout(); }, 80);
+    });
   }
 
   /**
@@ -50,7 +58,21 @@ G.board = (function () {
     };
   }
 
-  function layout(animateShift) {
+  /** 저장본 크기로 내부 좌표 기준만 맞춘다 (글자는 그대로). */
+  function primeSize(w, h) {
+    if (!(w > 0 && h > 0)) return;
+    W = Math.round(w);
+    H = Math.round(h);
+    playEl.style.width = W + 'px';
+    playEl.style.height = H + 'px';
+    G.fx.resize(W, H);
+  }
+
+  /**
+   * #play 는 CSS 로 화면 가운데에 고정된다.
+   * 크기 변화는 center-delta. 1px 짜리 노이즈는 무시한다.
+   */
+  function layout(animateShift, hard) {
     updateAppScale();
     var a = available();
     var s = C.EXPAND_SCALE[Math.min(G.state.expandLevel, C.EXPAND_SCALE.length - 1)];
@@ -58,40 +80,82 @@ G.board = (function () {
     var prevW = W, prevH = H;
     var dw = nw - W, dh = nh - H;
 
+    /* 리사이즈 노이즈 — 엔티티를 건드리지 않고 크기도 유지 */
+    if (!animateShift && prevW > 0 && Math.abs(dw) < 2 && Math.abs(dh) < 2) {
+      if (hard) return;
+      return;
+    }
+
     W = nw; H = nh;
-    /* 확장 구매만 크기 애니 — 초기/리사이즈는 즉시 적용 */
     if (animateShift) playEl.classList.add('anim-size');
     else playEl.classList.remove('anim-size');
     playEl.style.width = W + 'px';
     playEl.style.height = H + 'px';
     G.fx.resize(W, H);
 
-    if (ents.length && prevW > 0 && prevH > 0 && (dw || dh)) {
-      if (animateShift) {
-        /* 확장 구매 — 가운데 기준으로 커지므로 시각적 자리 유지 */
-        for (var i = 0; i < ents.length; i++) {
-          ents[i].x += dw / 2;
-          ents[i].y += dh / 2;
-        }
-      } else {
-        /* 창 크기·스케일 변화 — 비율로 자리를 맞춘다 */
-        var sx = nw / prevW, sy = nh / prevH;
-        for (var k = 0; k < ents.length; k++) {
-          ents[k].x *= sx;
-          ents[k].y *= sy;
-        }
+    if (hard) return;
+
+    var resized = ents.length && prevW > 0 && prevH > 0 && (dw || dh);
+    if (resized) {
+      for (var i = 0; i < ents.length; i++) {
+        ents[i].x += dw / 2;
+        ents[i].y += dh / 2;
       }
     }
     for (var j = 0; j < ents.length; j++) {
-      var p = clampPoint(ents[j].x, ents[j].y, ents[j]);
-      ents[j].x = p.x; ents[j].y = p.y;
+      if (!resized && !freezeClamp) {
+        var p = clampPoint(ents[j].x, ents[j].y, ents[j]);
+        ents[j].x = p.x; ents[j].y = p.y;
+      }
       ents[j].render();
+    }
+  }
+
+  /** 놀이영역 크기가 두 프레임 연속 같아질 때까지 잰 뒤 콜백. */
+  function whenStable(done) {
+    var lastW = -1, lastH = -1, stable = 0, guard = 0;
+    freezeClamp = true;
+    function tick() {
+      layout(false, true);
+      if (W > 0 && W === lastW && H === lastH) {
+        stable++;
+        if (stable >= 2) { done(); return; }
+      } else {
+        stable = 0;
+        lastW = W;
+        lastH = H;
+      }
+      if (++guard > 45) { done(); return; }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  /** 부팅 끝 — 동결만 푼다. 좌표를 일괄로 자르지 않는다. */
+  function releaseClamp() {
+    freezeClamp = false;
+  }
+
+  function setFreezeClamp(v) { freezeClamp = !!v; }
+  function isClampFrozen() { return freezeClamp; }
+
+  /** 잠든 사이·캡처 누수로 남은 드래그 표시를 전부 지운다 */
+  function clearDragFlags() {
+    for (var i = 0; i < ents.length; i++) {
+      var e = ents[i];
+      e.dragging = false;
+      if (e.el) {
+        e.el.classList.remove('drag', 'selling', 'nomerge');
+        try { delete e.el._dragPointerId; } catch (err) { }
+      }
     }
   }
 
   function size() { return { w: W, h: H }; }
 
   function clampPoint(x, y, ent) {
+    if (freezeClamp) return { x: x, y: y };
+    if (!(W > 0 && H > 0)) return { x: x, y: y };
     var hw = ent ? ent.w / 2 + 3 : 6, hh = ent ? ent.h / 2 + 3 : 6;
     return {
       x: U.clamp(x, hw, W - hw),
@@ -505,7 +569,10 @@ G.board = (function () {
   }
 
   return {
-    init: init, layout: layout, size: size,
+    init: init, layout: layout, whenStable: whenStable, size: size,
+    primeSize: primeSize, releaseClamp: releaseClamp,
+    setFreezeClamp: setFreezeClamp, isClampFrozen: isClampFrozen,
+    clearDragFlags: clearDragFlags,
     add: add, remove: remove, all: all, get: get, count: count,
     words: words, loose: loose, near: near, nearest: nearest,
     clampPoint: clampPoint, crowdScore: crowdScore, freeSpot: freeSpot,

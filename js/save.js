@@ -6,7 +6,8 @@ var G = window.G || (window.G = {});
 
 G.save = (function () {
   /* 재화 규칙이 완전히 바뀌었으므로 v1 저장본은 이어받지 않는다 */
-  var KEY = 'letters-board-v3';
+  /* v4: 좌표·방치·입력 고착 수정과 함께 전 유저 세이브를 새로 시작한다 */
+  var KEY = 'letters-board-v4';
 
   /* 초기화한 뒤에는 다시 쓰지 않는다.
      이게 없으면 새로고침 직전의 beforeunload 가 방금 지운 자리에 현재 판을
@@ -33,6 +34,7 @@ G.save = (function () {
       ticketsBought: 0,      // 지금까지 산 총 장수 — 다음 장 값이 여기서 나온다
       opt: { fx: true, sfx: true, snapHint: true },
       introDone: false,
+      tutorialDone: false,
       lastTime: Date.now()
     };
   }
@@ -52,6 +54,8 @@ G.save = (function () {
 
   function write() {
     if (wiped) return false;
+    /* 부팅 중 클램프 동결 구간의 좌표는 쓰지 않는다 */
+    if (G.board && G.board.isClampFrozen && G.board.isClampFrozen()) return false;
     try {
       G.state.lastTime = Date.now();
       localStorage.setItem(KEY, JSON.stringify(serialize()));
@@ -63,6 +67,10 @@ G.save = (function () {
 
   function read() {
     try {
+      /* 옛 세이브는 이어받지 않는다 — 전 유저 초기화 */
+      try { localStorage.removeItem('letters-board-v3'); } catch (e1) { }
+      try { localStorage.removeItem('letters-board-v2'); } catch (e2) { }
+      try { localStorage.removeItem('letters-board-v1'); } catch (e3) { }
       var raw = localStorage.getItem(KEY);
       if (!raw) return null;
       var d = JSON.parse(raw);
@@ -76,19 +84,36 @@ G.save = (function () {
   function clear() {
     wiped = true;
     try { localStorage.removeItem(KEY); } catch (err) { }
+    /* 예전 키도 같이 지운다 */
+    try { localStorage.removeItem('letters-board-v3'); } catch (err) { }
+    try { localStorage.removeItem('letters-board-v2'); } catch (err) { }
+    try { localStorage.removeItem('letters-board-v1'); } catch (err) { }
   }
 
-  /** 저장된 오브젝트를 보드에 복원. 예전 놀이영역 크기가 있으면 비율로 맞춘다 */
+  /** 저장된 오브젝트를 보드에 복원.
+   *  좌표는 보드 중심 기준(cx,cy)으로 저장한다. #play 가 가운데 고정이라
+   *  크기만 달라도 시각적 자리가 유지된다.
+   *  예전 세이브(x,y + boardW/H)는 한 번만 center-delta 로 맞춘다.
+   *  primeSize / 연속 layout 은 쓰지 않는다 — 그게 매 로드마다 어긋나던 원인.
+   */
   function restoreEntities(list, boardW, boardH) {
     if (!list) return;
     var sz = G.board.size();
-    var sx = (boardW > 0) ? sz.w / boardW : 1;
-    var sy = (boardH > 0) ? sz.h / boardH : 1;
+    var dx = (boardW > 0) ? (sz.w - boardW) / 2 : 0;
+    var dy = (boardH > 0) ? (sz.h - boardH) / 2 : 0;
     for (var i = 0; i < list.length; i++) {
       var d = list[i];
-      if (d.type === 'word' && d.text === 'WALL') d.text = 'ROCK';  // 이름만 바뀜
+      if (d.type === 'word' && d.text === 'WALL') d.text = 'ROCK';
       if (d.type === 'word' && !G.lookupWord(d.text)) continue;
-      var e = new G.Entity(d.type, d.text, d.x * sx, d.y * sy);
+      var x, y;
+      if (typeof d.cx === 'number' && typeof d.cy === 'number') {
+        x = sz.w / 2 + d.cx;
+        y = sz.h / 2 + d.cy;
+      } else {
+        x = d.x + dx;
+        y = d.y + dy;
+      }
+      var e = new G.Entity(d.type, d.text, x, y);
       e.data = d.data || {};
       e.age = d.age || 0;
       G.board.add(e);

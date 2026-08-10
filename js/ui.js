@@ -11,9 +11,12 @@ G.ui = (function () {
   var elMoney, elMoneyVal, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
     elBoardCount, elCountNum, elCountMax, elStatsPop, elCodexShop, elTicketBuys,
     elCodex, elCodexTab, elCodexList, elCodexCount, elCodexTickets, elCodexFoot,
-    elChip, elToasts, elPauseVeil, elIdleVeil, elPenVeil, elIntro, playEl, appEl;
+    elChip, elToasts, elPauseVeil, elIdleVeil, elPenVeil, elTutVeil, playEl, appEl;
 
   var penPicking = false;
+  var tutStep = 0;
+  var tutFromSettings = false;
+  var tutOpen = false;
 
   var lastMoneyShown = -1;
   var lastCountShown = -1, lastMaxShown = -1;
@@ -46,7 +49,7 @@ G.ui = (function () {
     elPauseVeil = document.getElementById('pauseVeil');
     elIdleVeil = document.getElementById('idleVeil');
     elPenVeil = document.getElementById('penVeil');
-    elIntro = document.getElementById('intro');
+    elTutVeil = document.getElementById('tutVeil');
 
     window.addEventListener('keydown', onPenKey);
     buildPenKeys();
@@ -58,7 +61,7 @@ G.ui = (function () {
     elPenVeil.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
     elPenVeil.addEventListener('click', function (ev) { ev.stopPropagation(); });
 
-    /* --- 생성 게이지 / 업그레이드 팝오버 --- */
+    /* --- 생성 게이지 / 업그레이드 팝오버 (클릭으로 열고 닫기) --- */
     elGauge.addEventListener('click', function (ev) {
       ev.stopPropagation();
       if (elSpawnPop.classList.contains('hidden')) openSpawnPop();
@@ -68,7 +71,10 @@ G.ui = (function () {
       ev.stopPropagation();
       if (G.game.buySpawnUpgrade()) { renderSpawnPop(); }
     });
-    /* --- 재화 → 통계 / 도감 힌트권 → 바로 아래 구매창 --- */
+
+    /* 보드·UI 밖을 포함한 빈 곳을 두드리면 물결 + 이번 생성 대기 당김 */
+    appEl.addEventListener('pointerdown', onBlankNudge);
+
     elMoney.addEventListener('click', function (ev) {
       ev.stopPropagation();
       if (elStatsPop.classList.contains('hidden')) openStatsPop();
@@ -141,18 +147,43 @@ G.ui = (function () {
       ev.stopPropagation();
       if (confirm('보드를 모두 지우고 처음부터 다시 시작할까요?')) G.game.hardReset();
     });
+    document.getElementById('tutBtn').addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      showTutorial(true);
+    });
+    document.getElementById('tutPrev').addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      setTutStep(tutStep - 1);
+    });
+    document.getElementById('tutNext').addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (tutStep >= 2) hideTutorial();
+      else setTutStep(tutStep + 1);
+    });
+    document.getElementById('tutDots').addEventListener('click', function (ev) {
+      var t = ev.target;
+      if (!t || !t.getAttribute) return;
+      var i = t.getAttribute('data-i');
+      if (i == null) return;
+      setTutStep(+i);
+    });
     /* 카드 바깥의 어두운 곳을 누르면 그냥 이어서 한다 */
     elPauseVeil.addEventListener('pointerdown', function (ev) {
       ev.stopPropagation();
-      if (ev.target === elPauseVeil) G.game.setPaused(false);
+      if (ev.target === elPauseVeil && !tutOpen) G.game.setPaused(false);
+    });
+    elTutVeil.addEventListener('pointerdown', function (ev) {
+      ev.stopPropagation();
     });
 
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') {
+        if (tutOpen) { hideTutorial(); return; }
         if (G.game.paused) { G.game.setPaused(false); return; }
         closePopovers(); toggleCodex(false);
       }
       if (ev.key === ' ' && ev.target === document.body) {
+        if (tutOpen) return;
         ev.preventDefault(); G.game.setPaused(!G.game.paused);
       }
     });
@@ -196,6 +227,43 @@ G.ui = (function () {
     void elGauge.offsetWidth;
     elGauge.classList.add('pulse');
     setTimeout(function () { elGauge.classList.remove('pulse'); }, 600);
+  }
+
+  /** 두드려 당길 때 */
+  function flashGaugeNudge() {
+    elGauge.classList.add('nudge');
+    clearTimeout(elGauge._nudgeT);
+    elGauge._nudgeT = setTimeout(function () {
+      elGauge.classList.remove('nudge');
+    }, 280);
+  }
+
+  /** UI·글자가 아닌 빈 곳을 눌렀을 때 */
+  function onBlankNudge(ev) {
+    if (ev.button != null && ev.button !== 0) return;
+    if (G.game.paused || penPicking) return;
+    if (G.game.sleeping || (G.board.isClampFrozen && G.board.isClampFrozen())) {
+      G.game.reviveBoard();
+    }
+    var t = ev.target;
+    if (t && t.closest) {
+      if (t.closest('.ent, #gauge, #money, #pauseBtn, #pauseVeil, #tutVeil, #penVeil, #idleVeil, #codex, #codexTab, #codexShop, #spawnPop, #statsPop, #wordPop, #expandChip, #toasts, button, input, a, label')) {
+        return;
+      }
+    }
+    var ok = G.game.nudgeSpawn();
+    spawnTapRipple(ev.clientX, ev.clientY);
+    if (ok) flashGaugeNudge();
+  }
+
+  function spawnTapRipple(clientX, clientY) {
+    var loc = U.screenToApp(clientX, clientY);
+    var d = document.createElement('div');
+    d.className = 'tap-ripple';
+    d.style.left = loc.x + 'px';
+    d.style.top = loc.y + 'px';
+    appEl.appendChild(d);
+    setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 460);
   }
 
   function bumpMoney() {
@@ -612,9 +680,14 @@ G.ui = (function () {
     elCodexTab.style.transform = 'translate(' + cdX.toFixed(1) + 'px,-50%)';
   }
 
-  function endCodexDrag() {
+  function endCodexDrag(ev) {
     if (!cdOn) return;
     cdOn = false;
+    try {
+      if (ev && ev.pointerId != null && elCodexTab.releasePointerCapture) {
+        elCodexTab.releasePointerCapture(ev.pointerId);
+      }
+    } catch (err) { }
     elCodex.classList.remove('dragging');
     elCodexTab.classList.remove('dragging');
     elCodex.style.transform = '';
@@ -726,20 +799,124 @@ G.ui = (function () {
     renderCodex();
   }
 
-  function hideIntro() {
-    if (elIntro) elIntro.classList.add('hidden');
-  }
+  function hideIntro() { }
 
   function showIntro() {
-    if (elIntro) elIntro.classList.remove('hidden');
+    showTutorial(false);
+  }
+
+  var TUT_STEPS = [
+    {
+      title: '게이지와 보드',
+      body: '위 막대는 다음 글자까지 남은 시간입니다. 왼쪽 숫자가 보드 정원이고, 꽉 차면 새 글자는 오지 않습니다.\n\n글자를 끌어 붙이면 단어가 됩니다. 게이지를 눌러 간격을 줄이고, 가장자리에서 보드를 넓히면 정원도 함께 늘어납니다.',
+      stage: function () {
+        return '' +
+          '<div class="tut-demo">' +
+            '<div class="tut-mini-gauge">' +
+              '<div class="tut-g-count"><b>8</b><span>/20</span></div>' +
+              '<div class="tut-g-bar"><i style="width:42%"></i></div>' +
+              '<div class="tut-g-text">다음 글자 35초</div>' +
+            '</div>' +
+            '<div class="tut-mini-play">' +
+              '<span class="tut-ch">T</span>' +
+              '<span class="tut-ch">E</span>' +
+              '<span class="tut-ch">A</span>' +
+              '<span class="tut-join">→</span>' +
+              '<span class="tut-word">TEA</span>' +
+            '</div>' +
+            '<div class="tut-up-row">' +
+              '<span class="tut-up-chip">생성 단축</span>' +
+              '<span class="tut-up-chip">보드 확장</span>' +
+            '</div>' +
+          '</div>';
+      }
+    },
+    {
+      title: '돈',
+      body: '오른쪽 위가 지금 가진 w입니다. 보드에 둔 글자와 단어가 20초마다 한 번 법니다.\n\n낱글자는 1w. 3글자 이상 단어는 기본 4w에서, 글자가 하나 늘 때마다 두 배가 됩니다.',
+      stage: function () {
+        return '' +
+          '<div class="tut-demo tut-demo-money">' +
+            '<div class="tut-money"><b class="tut-mv">128</b><span class="tut-mu">w</span></div>' +
+            '<div class="tut-float">+8w</div>' +
+            '<div class="tut-money-hint">20초마다 들어옵니다</div>' +
+          '</div>';
+      }
+    },
+    {
+      title: '특별 단어',
+      body: '영어 사전에 있는 단어라면 거의 다 만들 수 있습니다. 그중 일부만 색이 있고, 저마다 다른 능력을 가집니다.\n\n힌트는 도감에서 살 수 있고, 잘못 붙인 글자는 더블클릭으로 다시 뗄 수 있습니다.',
+      stage: function () {
+        return '' +
+          '<div class="tut-demo tut-demo-special">' +
+            '<div class="tut-cloud">' +
+              '<span class="tut-mystery">???</span>' +
+            '</div>' +
+          '</div>';
+      }
+    }
+  ];
+
+  function setTutStep(i) {
+    if (i < 0) i = 0;
+    if (i > 2) i = 2;
+    tutStep = i;
+    var step = TUT_STEPS[i];
+    var stage = document.getElementById('tutStage');
+    var title = document.getElementById('tutTitle');
+    var body = document.getElementById('tutBody');
+    var prev = document.getElementById('tutPrev');
+    var next = document.getElementById('tutNext');
+    var dots = document.getElementById('tutDots');
+    if (stage) stage.innerHTML = step.stage();
+    if (title) title.textContent = step.title;
+    if (body) body.textContent = step.body;
+    if (prev) prev.disabled = i === 0;
+    if (next) next.textContent = i >= 2 ? (tutFromSettings ? '닫기' : '시작하기') : '다음';
+    if (dots) {
+      var kids = dots.querySelectorAll('i');
+      for (var d = 0; d < kids.length; d++) {
+        kids[d].classList.toggle('on', d === i);
+      }
+    }
+  }
+
+  function showTutorial(fromSettings) {
+    if (!elTutVeil) return;
+    tutFromSettings = !!fromSettings;
+    tutOpen = true;
+    closePopovers();
+    if (elIdleVeil) elIdleVeil.classList.add('hidden');
+    if (!G.game.paused) G.game.setPaused(true);
+    elPauseVeil.classList.add('hidden');
+    setTutStep(0);
+    elTutVeil.classList.remove('hidden');
+  }
+
+  function hideTutorial() {
+    if (!elTutVeil) return;
+    elTutVeil.classList.add('hidden');
+    tutOpen = false;
+    G.state.tutorialDone = true;
+    G.state.introDone = true;
+    G.save.write();
+    if (tutFromSettings) {
+      elPauseVeil.classList.remove('hidden');
+    } else {
+      G.game.setPaused(false);
+    }
   }
 
   function setPausedUI(p) {
+    if (tutOpen) {
+      elPauseVeil.classList.add('hidden');
+      return;
+    }
     elPauseVeil.classList.toggle('hidden', !p);
   }
 
   function setIdleUI(on) {
-    if (elIdleVeil) elIdleVeil.classList.toggle('hidden', !on);
+    if (elIdleVeil) elIdleVeil.classList.toggle('hidden', !on || tutOpen);
   }
 
   /**
@@ -772,6 +949,13 @@ G.ui = (function () {
   }
 
   function closePenPick() {
+    penPicking = false;
+    if (elPenVeil) elPenVeil.classList.add('hidden');
+  }
+
+  /** 유령 penPicking 만 지운다 (PEN 환불 없음 — revive 안전망) */
+  function forceClosePen() {
+    if (!penPicking) return;
     penPicking = false;
     if (elPenVeil) elPenVeil.classList.add('hidden');
   }
@@ -822,12 +1006,16 @@ G.ui = (function () {
 
   return {
     init: init, tick: tick, toast: toast, floatMoney: floatMoney, pulseGauge: pulseGauge,
+    flashGaugeNudge: flashGaugeNudge,
     closePopovers: closePopovers, showWordPop: showWordPop,
     renderCodex: renderCodex, toggleCodex: toggleCodex,
     setPausedUI: setPausedUI, setIdleUI: setIdleUI,
     openPenPick: openPenPick, closePenPick: closePenPick,
+    forceClosePen: forceClosePen,
     get penPicking() { return penPicking; },
     hideIntro: hideIntro, showIntro: showIntro,
+    showTutorial: showTutorial, hideTutorial: hideTutorial,
+    get tutorialOpen() { return tutOpen; },
     syncOptions: syncOptions, hideChip: hideChip
   };
 })();

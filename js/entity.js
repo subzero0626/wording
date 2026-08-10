@@ -460,11 +460,14 @@ var G = window.G || (window.G = {});
     this.el = null; this.inner = null; this.body = null;
   };
 
-  /** 저장용 직렬화 */
+  /** 저장용 직렬화 — 절대좌표와 함께 중심 상대좌표(cx,cy)를 남긴다 */
   Entity.prototype.toJSON = function () {
+    var sz = G.board.size();
     return {
       id: this.id, type: this.type, text: this.text,
       x: Math.round(this.x), y: Math.round(this.y),
+      cx: Math.round((this.x - sz.w / 2) * 10) / 10,
+      cy: Math.round((this.y - sz.h / 2) * 10) / 10,
       burning: this.burning, burnTime: Math.round(this.burnTime),
       data: this.data, age: Math.round(this.age)
     };

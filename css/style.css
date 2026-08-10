@@ -33,9 +33,13 @@ html,body{
   overflow:hidden;
   -webkit-font-smoothing:antialiased;
   -webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;
+  user-select:none;
   overscroll-behavior:none;
   touch-action:manipulation;
 }
+::selection{ background:transparent; color:inherit; }
+::-moz-selection{ background:transparent; color:inherit; }
 
 body{
   background-image:
@@ -74,7 +78,6 @@ button{
   box-shadow:
     0 1px 0 rgba(255,255,255,.9) inset,
     0 10px 34px rgba(40,36,30,.07);
-  /* 크기 트랜지션은 확장 구매 때만 — 로드 시 0→최종 애니면 글자가 위로 밀린다 */
   /* overflow 를 자르지 않는다 — 판매하려고 글자를 밖으로 끌어낼 때 보여야 한다 */
 }
 #play.anim-size{
@@ -177,8 +180,15 @@ button{
   padding:6px 5px;
   white-space:nowrap;
   will-change:transform;
-  user-select:none; cursor:grab;
+  user-select:none; -webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  cursor:grab;
   touch-action:none;
+  outline:none;
+}
+.ent .ch, .ent .body{
+  -webkit-user-select:none; user-select:none;
+  -webkit-tap-highlight-color:transparent;
 }
 
 .ent .inner{
@@ -411,6 +421,23 @@ button{
 }
 #gauge.pulse #gaugeBar i{ background:linear-gradient(90deg,#4f9a72,#2f7d55); }
 #gauge.pulse #gaugeText{ color:var(--money); }
+#gauge.nudge #gaugeBar i{ background:linear-gradient(90deg,#5f9a75,#2f7d55); }
+
+/* 빈 곳 두드릴 때 퍼지는 물결 — 회색, 살짝만 */
+.tap-ripple{
+  position:absolute; z-index:25; pointer-events:none;
+  left:0; top:0;
+  width:12px; height:12px; margin:-6px 0 0 -6px;
+  border-radius:50%;
+  border:1.5px solid rgba(70,68,64,.32);
+  animation:tapRipple .4s ease-out forwards;
+}
+@keyframes tapRipple{
+  0%{ opacity:.55; transform:scale(.4); }
+  55%{ opacity:.28; }
+  100%{ opacity:0; transform:scale(4.8); }
+}
+
 #gaugeText{
   margin-top:6px; font-size:11.5px; color:var(--ink-3);
   letter-spacing:.02em; font-variant-numeric:tabular-nums;
@@ -827,6 +854,163 @@ button{
 
 .pcard-foot{ margin-top:16px; text-align:center; }
 .pcard-note{ margin:11px 0 0; font-size:11px; color:var(--ink-3); }
+#tutBtn, #resetBtn{
+  display:block; width:100%; padding:10px 0; margin-top:8px;
+  border-radius:10px; font-size:13px; font-weight:650;
+  color:var(--ink-2); background:rgba(44,42,39,.06);
+  transition:background .15s, color .15s;
+}
+#tutBtn{ margin-top:0; }
+#tutBtn:hover, #resetBtn:hover{ background:rgba(44,42,39,.10); color:var(--ink); }
+#resetBtn{ color:#c43c32; }
+#resetBtn:hover{ background:rgba(196,60,50,.12); color:#a82e26; }
+
+/* 튜토리얼 — 일시정지와 같은 흑·크림 카드 */
+#tutVeil{
+  position:absolute; inset:0; z-index:86;
+  background:rgba(38,35,31,.42);
+  backdrop-filter:blur(4px);
+  display:flex; align-items:center; justify-content:center;
+  animation:veilIn .18s ease-out;
+  touch-action:manipulation;
+}
+.tut-card{
+  width:min(440px, calc(100vw - 28px));
+  padding:22px 24px 20px;
+}
+.tut-dots{
+  display:flex; justify-content:center; gap:8px; margin:0 0 16px;
+}
+.tut-dots i{
+  width:8px; height:8px; border-radius:50%;
+  background:rgba(44,42,39,.18); cursor:pointer;
+  transition:background .15s, transform .15s;
+}
+.tut-dots i.on{ background:var(--ink); transform:scale(1.18); }
+
+.tut-stage{
+  min-height:168px;
+  display:flex; align-items:center; justify-content:center;
+  margin:0 0 18px; padding:20px 16px;
+  background:rgba(44,42,39,.035);
+  border:1px solid var(--line);
+  border-radius:16px;
+}
+.tut-demo{ width:100%; text-align:center; }
+.tut-title{
+  margin:0 0 10px; font-size:20px; font-weight:750;
+  letter-spacing:.01em; color:var(--ink); text-align:center;
+}
+.tut-body{
+  margin:0 0 20px; font-size:14.5px; font-weight:500;
+  color:var(--ink-2); line-height:1.62; text-align:center;
+  white-space:pre-line;
+}
+
+.tut-nav{ display:flex; gap:10px; }
+.tut-nav button{
+  flex:1; padding:13px 0; border-radius:12px;
+  font-size:14.5px; font-weight:700; letter-spacing:.02em;
+  transition:opacity .15s, transform .08s, background .15s;
+}
+.tut-nav button:active{ transform:scale(.985); }
+#tutNext{
+  background:var(--accent); color:#fff;
+}
+#tutNext:hover{ opacity:.87; }
+.tut-ghost{
+  background:rgba(44,42,39,.06); color:var(--ink-2);
+}
+.tut-ghost:hover{ background:rgba(44,42,39,.10); }
+.tut-ghost:disabled{ opacity:.35; pointer-events:none; }
+
+/* 데모 — 실제 게이지·글자 UI를 축소해 보여 준다 */
+.tut-mini-gauge{
+  position:relative; width:240px; margin:0 auto 16px;
+  text-align:center;
+}
+.tut-g-count{
+  position:absolute; right:calc(100% + 10px); top:2px;
+  white-space:nowrap; line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.tut-g-count b{ font-size:14px; font-weight:750; color:var(--ink-2); }
+.tut-g-count span{ font-size:12px; font-weight:600; color:var(--ink-3); }
+.tut-g-bar{
+  height:5px; border-radius:99px;
+  background:rgba(44,42,39,.10); overflow:hidden;
+}
+.tut-g-bar i{
+  display:block; height:100%;
+  background:linear-gradient(90deg,#8d8b85,#4f4c46);
+  border-radius:99px;
+}
+.tut-g-text{
+  margin-top:7px; font-size:12px; color:var(--ink-3);
+  letter-spacing:.02em; font-variant-numeric:tabular-nums;
+}
+
+.tut-mini-play{
+  display:flex; align-items:baseline; justify-content:center; gap:2px;
+  min-height:48px; margin-bottom:14px;
+}
+.tut-ch{
+  font-size:32px; font-weight:800; color:#a29c92;
+  letter-spacing:-.005em;
+  text-shadow:0 1px 0 rgba(255,255,255,.85);
+}
+.tut-ch + .tut-ch{ margin-left:1px; }
+.tut-join{
+  margin:0 12px; font-size:15px; font-weight:600; color:var(--ink-3);
+}
+.tut-word{
+  font-size:30px; font-weight:800; color:#17150f;
+  letter-spacing:.02em;
+}
+.tut-ability{
+  font-size:28px; font-weight:800; letter-spacing:.04em;
+}
+.tut-up-row{
+  display:flex; justify-content:center; gap:8px; flex-wrap:wrap;
+}
+.tut-up-chip{
+  display:inline-block; padding:5px 11px; border-radius:99px;
+  font-size:12px; font-weight:650; color:var(--ink-2);
+  background:#fff; border:1px solid var(--line-2);
+  box-shadow:0 1px 2px rgba(40,36,30,.06);
+}
+
+.tut-demo-money{ position:relative; padding:18px 0 8px; }
+.tut-money{
+  display:inline-flex; align-items:baseline; gap:2px;
+  font-variant-numeric:tabular-nums;
+}
+.tut-mv{ font-size:40px; font-weight:750; color:var(--ink); }
+.tut-mu{ font-size:20px; font-weight:600; color:var(--ink-3); }
+.tut-float{
+  position:absolute; left:50%; top:8px;
+  margin-left:58px;
+  font-size:14px; font-weight:700; color:var(--money);
+  animation:tutFloat 1.6s ease-in-out infinite;
+}
+@keyframes tutFloat{
+  0%,100%{ opacity:.35; transform:translateY(4px); }
+  50%{ opacity:1; transform:translateY(-6px); }
+}
+.tut-money-hint{
+  margin-top:14px; font-size:12.5px; color:var(--ink-3); font-weight:550;
+}
+
+.tut-cloud{
+  display:flex; flex-wrap:wrap; justify-content:center; align-items:baseline;
+  gap:10px 16px; max-width:320px; margin:0 auto;
+}
+.tut-cloud .tut-mystery{ font-size:36px; }
+.tut-dim{ color:#9a948a !important; font-weight:700 !important; }
+.tut-mystery{
+  font-weight:800; letter-spacing:.18em; color:#2c2a27;
+  opacity:.92;
+}
 
 /* 방치 오버레이만 쓰는 옛 레이아웃 */
 .veil-inner{ text-align:center; }
@@ -835,7 +1019,8 @@ button{
   letter-spacing:.3em; color:var(--ink-2);
 }
 
-/* 방치 — 일시정지보다 옅게 덮는다. 클릭은 그대로 통과시켜 아무 데나 눌러 깨울 수 있게 */
+/* 방치 — 일시정지보다 옅게 덮는다. 클릭은 그대로 통과시켜 아무 데나 눌러 깨울 수 있게.
+   자식(h1 등)도 막아야 한다 — 부모만 none 이면 글자가 클릭을 가로챈다. */
 #idleVeil{
   position:absolute; inset:0; z-index:78;
   background:rgba(246,244,240,.62);
@@ -844,6 +1029,7 @@ button{
   pointer-events:none;
   animation:popIn .5s ease-out;
 }
+#idleVeil *{ pointer-events:none; }
 #idleVeil h1{
   margin:0 0 14px; font-size:22px; font-weight:750;
   letter-spacing:.3em; color:var(--ink-3);
@@ -900,14 +1086,6 @@ button{
   50%{ opacity:.95; }
 }
 
-#resetBtn{
-  padding:7px 16px; border-radius:9px;
-  border:1px solid rgba(180,84,74,.34);
-  color:#b4544a; font-size:12px; font-weight:650;
-  transition:background .15s, border-color .15s;
-}
-#resetBtn:hover{ background:rgba(180,84,74,.08); border-color:rgba(180,84,74,.6); }
-
 #toasts{
   position:absolute; z-index:70; left:50%; bottom:26px;
   transform:translateX(-50%);
@@ -927,19 +1105,11 @@ button{
 @keyframes toastIn{ from{ opacity:0; transform:translateY(8px); } }
 @keyframes toastOut{ to{ opacity:0; transform:translateY(-6px); } }
 
-#intro{
-  position:absolute; z-index:35; left:50%; bottom:64px;
-  transform:translateX(-50%); text-align:center;
-  font-size:12.5px; color:var(--ink-3); line-height:1.7;
-  pointer-events:none;
-  animation:popIn .4s ease-out;
-}
-#intro b{ color:var(--ink-2); }
-#intro p{ margin:2px 0; }
-
 @media (max-width:720px){
   :root{ --codex-w: min(330px, calc(90vw / var(--app-scale))); }
   #gauge{ width:240px; }
+  .tut-card{ width:min(440px, calc(100vw - 28px)); }
+  .tut-g-count{ display:none; }
   /* 터치에서는 호버 말풍선이 거슬리니 끈다 */
   [data-tip]:hover::after{ opacity:0; }
 }

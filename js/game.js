@@ -29,6 +29,8 @@ G.game = (function () {
       if (G.state.opt.fx === undefined) G.state.opt.fx = true;
       if (G.state.opt.sfx === undefined) G.state.opt.sfx = true;
       if (G.state.opt.snapHint === undefined) G.state.opt.snapHint = true;
+      /* 예전에 인트로만 본 세이브는 튜토리얼을 강제하지 않는다 */
+      if (s.tutorialDone === undefined) G.state.tutorialDone = !!s.introDone;
       /* WALL → ROCK 이름만 바뀜 — 발견한 기록도 이어받는다 */
       if (G.state.discovered && G.state.discovered.WALL) {
         G.state.discovered.ROCK = true;
@@ -53,36 +55,53 @@ G.game = (function () {
     G.fx.setEnabled(G.state.opt.fx);
     G.sfx.setEnabled(G.state.opt.sfx !== false);
 
-    if (saved && saved.ents && saved.ents.length) {
-      G.save.restoreEntities(saved.ents, saved.boardW, saved.boardH);
-      var gain = G.save.offlineGain(saved.t || Date.now());
-      var ghosts = G.save.ghostCount();
-      if (gain > 1) {
-        setTimeout(function () {
-          G.ui.toast('자리를 비운 동안 ' + U.money(gain) + ' 을 모았다' +
-            (ghosts ? ' — 유령이 부지런했다' : ''));
-        }, 700);
+    /* 크기가 안정된 뒤, 중심 상대좌표로 한 번만 복원한다.
+       이후 layout 을 반복 호출하지 않는다 (그게 매 새로고침 드리프트 원인). */
+    var pending = saved && saved.ents && saved.ents.length ? saved : null;
+    G.board.whenStable(function () {
+      if (pending) {
+        G.save.restoreEntities(pending.ents, pending.boardW, pending.boardH);
+        var gain = G.save.offlineGain(pending.t || Date.now());
+        var ghosts = G.save.ghostCount();
+        if (gain > 1) {
+          setTimeout(function () {
+            G.ui.toast('자리를 비운 동안 ' + U.money(gain) + ' 을 모았다' +
+              (ghosts ? ' — 유령이 부지런했다' : ''));
+          }, 700);
+        }
+        G.state.spawnTimer = Math.min(G.state.spawnTimer, spawnInterval());
+      } else {
+        seedBoard();
       }
-      G.state.spawnTimer = Math.min(G.state.spawnTimer, spawnInterval());
-    } else {
-      seedBoard();
-    }
+      requestAnimationFrame(function () {
+        G.board.releaseClamp();
+        if (!G.state.tutorialDone) G.ui.showTutorial(false);
+      });
+      /* rAF 가 빠지거나 예외로 동결이 남는 경우 대비 */
+      setTimeout(function () {
+        if (G.board.isClampFrozen && G.board.isClampFrozen()) G.board.releaseClamp();
+      }, 2500);
+    });
 
-    if (!G.state.introDone) G.ui.showIntro(); else G.ui.hideIntro();
     G.ui.renderCodex();
 
-    if (document.hidden) { awayAt = Date.now(); awayByHide = true; }
+    if (document.visibilityState === 'hidden') { awayAt = Date.now(); awayByHide = true; }
     document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pageshow', function () {
-      if (!document.hidden) wakeBoard();
-    });
     window.addEventListener('beforeunload', function () { G.save.write(); });
 
     var acts = ['pointerdown', 'pointermove', 'wheel', 'keydown'];
     for (var a = 0; a < acts.length; a++) {
       window.addEventListener(acts[a], onActivity, { passive: true });
     }
+    /* 캡처 단계에서 먼저 깨운다 — 포인터가 오면 화면을 보고 있는 것 */
+    window.addEventListener('pointerdown', function () {
+      if (awayAt || (G.board.isClampFrozen && G.board.isClampFrozen())) reviveBoard();
+    }, true);
     window.addEventListener('pointerdown', function () { G.sfx.unlock(); }, { once: true, capture: true });
+
+    window.addEventListener('pageshow', function () {
+      if (document.visibilityState !== 'hidden') reviveBoard({ silent: true });
+    });
 
     running = true;
     last = performance.now();
@@ -109,6 +128,8 @@ G.game = (function () {
      ------------------------------------------------------------------ */
   function sleepBoard(byHide) {
     if (awayAt || paused) return;
+    /* 부팅 동결 중에는 재우지 않는다 — 깨워도 물리만 계속 죽은 채로 남는다 */
+    if (G.board.isClampFrozen && G.board.isClampFrozen()) return;
     awayAt = Date.now();
     awayByHide = !!byHide;
     G.drag.cancel();
@@ -118,34 +139,53 @@ G.game = (function () {
     if (!byHide) G.ui.setIdleUI(true);
   }
 
-  function wakeBoard() {
+  /**
+   * 반쯤 죽은 보드를 살린다.
+   * 방치(awayAt)뿐 아니라 풀리지 않은 freezeClamp·유령 penPicking·포인터 캡처까지
+   * 같이 정리한다. 위치 밀림·드래그 불가·애니 정지가 같은 게이트에서 나온다.
+   */
+  function reviveBoard(opts) {
+    opts = opts || {};
     idleAcc = 0;
-    last = performance.now();        // 재워 둔 시간이 한꺼번에 흐르지 않게
+    last = performance.now();
     awayByHide = false;
-    if (!awayAt) return;
+
+    try { G.drag.cancel(); } catch (err) { }
+    if (G.board && G.board.isClampFrozen && G.board.isClampFrozen()) {
+      G.board.releaseClamp();
+    }
+    if (G.ui && G.ui.forceClosePen) G.ui.forceClosePen();
+
+    if (!awayAt) {
+      G.ui.setIdleUI(false);
+      return;
+    }
     var at = awayAt;
     awayAt = 0;
     G.ui.setIdleUI(false);
+    if (opts.silent) return;
     var gain = G.save.offlineGain(at);
     if (gain > 1) G.ui.toast('자리를 비운 동안 ' + U.money(gain) + ' 을 모았다');
+  }
+
+  function wakeBoard() {
+    reviveBoard();
   }
 
   /** 조작이 있었다 — 재워 둔 보드라면 깨운다 */
   function onActivity() {
     if (awayAt) {
-      /* 탭을 나갔다가 이미 돌아온 뒤 visibility 이벤트를 놓치면
-         awayByHide 가 남은 채로 클릭이 무시되어 보드가 영영 멈춘다.
-         화면이 보이는 상태면 조작으로 깨운다. */
-      if (awayByHide && document.hidden) return;
-      wakeBoard();
+      /* 포인터·키가 들어왔으면 보인다. document.hidden 잔류에 묶지 않는다. */
+      if (awayByHide && document.visibilityState === 'hidden') return;
+      reviveBoard();
       return;
     }
     idleAcc = 0;
   }
 
   function onVisibility() {
-    if (document.hidden) { sleepBoard(true); return; }
-    wakeBoard();
+    if (document.visibilityState === 'hidden') { sleepBoard(true); return; }
+    reviveBoard();
   }
 
   /* ------------------------------------------------------------------
@@ -157,21 +197,28 @@ G.game = (function () {
 
     var dt = (now - last) / 1000;
     last = now;
-    if (dt > 0.1) dt = 0.1;          // 탭 전환 등으로 인한 큰 점프 방지
+    if (dt > 0.1) dt = 0.1;
     if (dt <= 0) return;
 
+    var frozen = G.board.isClampFrozen && G.board.isClampFrozen();
+
     if (!paused && !awayAt && !G.ui.penPicking) {
-      idleAcc += dt;
-      if (idleAcc >= C.IDLE_AFTER) {
-        sleepBoard(false);
-      } else {
-        G.state.playTime = (G.state.playTime || 0) + dt;
-        stepSpawn(dt);
-        try { G.drag.tick(dt); } catch (err) { console.error(err); G.drag.cancel(); }
-        try { G.board.step(dt); } catch (err) { console.error(err); }
+      if (frozen) {
+        /* 부팅 동결 — 물리·방치 타이머·저장을 모두 멈춘다 */
         G.fx.update(dt);
-        saveAcc += dt;
-        if (saveAcc > 6) { saveAcc = 0; G.save.write(); }
+      } else {
+        idleAcc += dt;
+        if (idleAcc >= C.IDLE_AFTER) {
+          sleepBoard(false);
+        } else {
+          G.state.playTime = (G.state.playTime || 0) + dt;
+          stepSpawn(dt);
+          try { G.drag.tick(dt); } catch (err) { console.error(err); G.drag.cancel(); }
+          try { G.board.step(dt); } catch (err) { console.error(err); }
+          G.fx.update(dt);
+          saveAcc += dt;
+          if (saveAcc > 6) { saveAcc = 0; G.save.write(); }
+        }
       }
     }
     G.fx.render();
@@ -234,6 +281,22 @@ G.game = (function () {
       return;
     }
     G.state.spawnTimer = spawnInterval();
+  }
+
+  var lastNudgeAt = 0;
+
+  /**
+   * 생성 게이지를 두드렸다 — 이번 대기만 조금 당긴다.
+   * 영구 간격은 건드리지 않는다 (업그레이드 · TIME · CLOCK 몫).
+   */
+  function nudgeSpawn() {
+    if (paused || awayAt || G.ui.penPicking) return false;
+    var now = performance.now();
+    if (now - lastNudgeAt < C.SPAWN_CLICK_GAP * 1000) return false;
+    lastNudgeAt = now;
+    if (!(G.state.spawnTimer > 0)) return false;
+    G.state.spawnTimer = Math.max(0, G.state.spawnTimer - C.SPAWN_CLICK_CUT);
+    return true;
   }
 
   function buySpawnUpgrade() {
@@ -327,6 +390,7 @@ G.game = (function () {
     spawnInterval: spawnInterval,
     stepSpawn: stepSpawn,        // 헤드리스 검증(_sim.js)에서 부른다
     hurrySpawn: hurrySpawn,
+    nudgeSpawn: nudgeSpawn,
     soldOne: soldOne,
     clockCut: clockCut,
     sellTime: sellTime,
@@ -334,7 +398,10 @@ G.game = (function () {
     onWordFormed: onWordFormed,
     setPaused: setPaused,
     hardReset: hardReset,
-    get paused() { return paused; }
+    wakeBoard: wakeBoard,
+    reviveBoard: reviveBoard,
+    get paused() { return paused; },
+    get sleeping() { return !!awayAt; }
   };
 })();
 

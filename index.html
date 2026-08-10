@@ -33,13 +33,13 @@
   <div id="gauge" data-tip="생성 간격 줄이기">
     <div id="boardCount"><b>0</b><span>/20</span></div>
     <div id="gaugeBar"><i></i></div>
-    <div id="gaugeText">다음 글자 45초</div>
+    <div id="gaugeText">다음 글자 60초</div>
   </div>
 
   <!-- 생성 간격 업그레이드 팝오버 -->
   <div id="spawnPop" class="pop hidden">
-    <div class="pop-row">현재 생성 간격 <b id="popCur">45초</b></div>
-    <div class="pop-step"><span id="popFrom">45초</span> <em>→</em> <span id="popTo">43초</span></div>
+    <div class="pop-row">현재 생성 간격 <b id="popCur">60초</b></div>
+    <div class="pop-step"><span id="popFrom">60초</span> <em>→</em> <span id="popTo">58초</span></div>
     <div class="pop-cost">비용 <b id="popCost">60w</b></div>
     <button id="popBuy">단축</button>
   </div>
@@ -111,8 +111,25 @@
       </div>
 
       <div class="pcard-foot">
+        <button type="button" id="tutBtn">튜토리얼 보기</button>
         <button id="resetBtn">처음부터 다시</button>
         <p class="pcard-note">진행 상황은 자동으로 저장됩니다</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 튜토리얼 — 일시정지와 같은 카드 UI, 단계만 넘김 -->
+  <div id="tutVeil" class="hidden">
+    <div class="pcard tut-card">
+      <div class="tut-dots" id="tutDots" aria-hidden="true">
+        <i data-i="0"></i><i data-i="1"></i><i data-i="2"></i>
+      </div>
+      <div class="tut-stage" id="tutStage"></div>
+      <h2 class="tut-title" id="tutTitle"></h2>
+      <p class="tut-body" id="tutBody"></p>
+      <div class="tut-nav">
+        <button type="button" id="tutPrev" class="tut-ghost">이전</button>
+        <button type="button" id="tutNext">다음</button>
       </div>
     </div>
   </div>
@@ -155,13 +172,6 @@
 
   <!-- 토스트 -->
   <div id="toasts"></div>
-
-  <!-- 최초 안내 -->
-  <div id="intro" class="hidden">
-    <p>글자를 <b>드래그</b>해 서로 옆에 붙이면 단어가 됩니다.</p>
-    <p class="tiny">영어 사전에 있는 단어라면 무엇이든 만들 수 있고, 길수록 많이 법니다.</p>
-    <p class="tiny">잘못 붙였다면 <b>더블클릭</b>으로 다시 떼어낼 수 있습니다.</p>
-  </div>
 
 </div>
 

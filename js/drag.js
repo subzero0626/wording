@@ -33,10 +33,19 @@ G.drag = (function () {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
+    layerEl.addEventListener('lostpointercapture', function () {
+      /* 캡처가 OS/브라우저에 의해 끊기면 드래그 상태를 비운다 */
+      if (cur) cancel();
+      else pointerId = null;
+    });
     layerEl.addEventListener('dblclick', onDblClick);
     layerEl.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
   }
 
+  /**
+   * 포인터 캡처가 #layer 에 남아 있으면 ev.target 이 항상 layer 라서
+   * 조상 순회로는 글자를 못 찾는다. 그 경우 hit-test 로 보완한다.
+   */
   function entFromEvent(ev) {
     var node = ev.target;
     while (node && node !== document.body) {
@@ -44,6 +53,15 @@ G.drag = (function () {
         return G.board.get(node.dataset.id);
       }
       node = node.parentNode;
+    }
+    if (document.elementsFromPoint) {
+      var stack = document.elementsFromPoint(ev.clientX, ev.clientY);
+      for (var i = 0; i < stack.length; i++) {
+        var n = stack[i];
+        if (n && n.classList && n.classList.contains('ent')) {
+          return G.board.get(n.dataset.id);
+        }
+      }
     }
     return null;
   }
@@ -58,21 +76,25 @@ G.drag = (function () {
   }
 
   function releasePtr() {
-    if (pointerId == null || !layerEl) { pointerId = null; return; }
-    try {
-      if (layerEl.hasPointerCapture && layerEl.hasPointerCapture(pointerId)) {
-        layerEl.releasePointerCapture(pointerId);
-      }
-    } catch (err) { }
+    if (!layerEl) { pointerId = null; return; }
+    var id = pointerId;
     pointerId = null;
+    if (id == null) return;
+    try {
+      /* hasPointerCapture 가 false 여도 캡처가 남아 있는 경우가 있어 강제 해제 */
+      layerEl.releasePointerCapture(id);
+    } catch (err) { }
   }
 
   /* ------------------------------------------------------------------ */
 
   function onDown(ev) {
     if (G.game.paused || G.ui.penPicking) return;
+    if (G.game.sleeping || (G.board.isClampFrozen && G.board.isClampFrozen())) {
+      G.game.reviveBoard();
+    }
     var e = entFromEvent(ev);
-    if (!e) return;
+    if (!e) return;   /* 빈 칸 두드림은 ui.onBlankNudge 가 맡는다 */
     /* 이전 드래그가 예외로 남았으면 여기서 정리한다 */
     if (cur && cur !== e) cancel();
     ev.preventDefault();
@@ -413,6 +435,9 @@ G.drag = (function () {
   function onDblClick(ev) {
     var e = entFromEvent(ev);
     if (!e || G.game.paused || G.ui.penPicking) return;
+    if (G.game.sleeping || (G.board.isClampFrozen && G.board.isClampFrozen())) {
+      G.game.reviveBoard();
+    }
     ev.preventDefault();
     if (e.type === 'cluster') {
       G.board.explode(e);
@@ -647,6 +672,7 @@ G.drag = (function () {
     }
     clearSnap();
     releasePtr();
+    if (G.board && G.board.clearDragFlags) G.board.clearDragFlags();
     dev = null; devT = 0;
     outside = false;
   }
