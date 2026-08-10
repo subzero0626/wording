@@ -263,8 +263,7 @@ G.drag = (function () {
     if (!e) return false;
     if (e.type === 'letter') return true;
     if (e.type !== 'word' || !e.def.sellable || e.afflicted()) return false;
-    /* PEN 은 고른 글자가 들어갈 자리가 있어야 한다 — 가득 차면 못 버린다 */
-    if (e.text === 'PEN' && G.board.count() >= G.maxEntities()) return false;
+    /* PEN 은 버리는 순간 자리가 비므로, 보드가 가득 차 있어도 쓸 수 있다 */
     return true;
   }
 
@@ -340,14 +339,6 @@ G.drag = (function () {
   function sell(e) {
     var time = e.type === 'word' && e.text === 'TIME';
     var pen = e.type === 'word' && e.text === 'PEN';
-    /* 버리는 순간에 다시 한 번 — 그사이에 글자가 들어왔을 수 있다 */
-    if (pen && G.board.count() >= G.maxEntities()) {
-      var back = G.board.clampPoint(e.x, e.y, e);
-      e.x = back.x; e.y = back.y;
-      e.land();
-      G.ui.toast('보드가 가득 차 있어 <b>PEN</b> 을 버릴 수 없다');
-      return;
-    }
     if (time) {
       G.fx.burst(e.x, e.y, '140,138,170', 22, 110);
       G.fx.ring(e.x, e.y, { r0: 6, r1: 88, life: .7, c: '140,138,170', lw: 1.6 });

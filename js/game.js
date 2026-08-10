@@ -54,7 +54,7 @@ G.game = (function () {
     G.sfx.setEnabled(G.state.opt.sfx !== false);
 
     if (saved && saved.ents && saved.ents.length) {
-      G.save.restoreEntities(saved.ents);
+      G.save.restoreEntities(saved.ents, saved.boardW, saved.boardH);
       var gain = G.save.offlineGain(saved.t || Date.now());
       var ghosts = G.save.ghostCount();
       if (gain > 1) {

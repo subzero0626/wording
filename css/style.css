@@ -74,8 +74,11 @@ button{
   box-shadow:
     0 1px 0 rgba(255,255,255,.9) inset,
     0 10px 34px rgba(40,36,30,.07);
-  transition:width .5s cubic-bezier(.2,.8,.25,1), height .5s cubic-bezier(.2,.8,.25,1);
+  /* 크기 트랜지션은 확장 구매 때만 — 로드 시 0→최종 애니면 글자가 위로 밀린다 */
   /* overflow 를 자르지 않는다 — 판매하려고 글자를 밖으로 끌어낼 때 보여야 한다 */
+}
+#play.anim-size{
+  transition:width .5s cubic-bezier(.2,.8,.25,1), height .5s cubic-bezier(.2,.8,.25,1);
 }
 #play.expanding{ animation:playPulse .6s ease-out; }
 @keyframes playPulse{
@@ -457,6 +460,7 @@ button{
   text-shadow:0 1px 0 rgba(255,255,255,.9);
   animation:floatUp 1.1s ease-out forwards;
   font-variant-numeric:tabular-nums;
+  transform:translateX(-50%);
 }
 .float-money.small{ font-size:12.5px; font-weight:650; opacity:.62; }
 @keyframes floatUp{
@@ -855,19 +859,42 @@ button{
   display:flex; align-items:center; justify-content:center;
   animation:popIn .25s ease-out;
 }
-#penVeil .pen-inner{ text-align:center; pointer-events:none; }
+#penVeil .pen-inner{
+  text-align:center; pointer-events:auto;
+  max-width:min(420px, 92vw); padding:8px 12px;
+}
 #penVeil h1{
   margin:0 0 10px; font-size:20px; font-weight:750;
   letter-spacing:.28em; color:#3d5a80;
 }
 #penVeil p{ margin:4px 0; color:var(--ink); font-size:15px; font-weight:650; }
 #penVeil .tiny{ color:var(--ink-3); font-size:12px; font-weight:500; }
-#penVeil .pen-cursor{
-  margin-top:18px; font-size:28px; font-weight:700; color:#3d5a80;
-  letter-spacing:.05em;
-  animation:penBlink 1s steps(1) infinite;
+#penVeil .pen-keys{
+  display:grid;
+  grid-template-columns:repeat(7, 1fr);
+  gap:6px;
+  margin:16px auto 12px;
+  max-width:340px;
 }
-@keyframes penBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.15; } }
+#penVeil .pen-key{
+  appearance:none; border:1px solid rgba(61,90,128,.28);
+  background:rgba(255,255,255,.72); color:#2a3d55;
+  border-radius:8px; font-size:15px; font-weight:700;
+  height:38px; cursor:pointer;
+  transition:background .12s, border-color .12s, transform .1s;
+}
+#penVeil .pen-key:hover{
+  background:#fff; border-color:rgba(61,90,128,.55);
+}
+#penVeil .pen-key:active{ transform:scale(.96); }
+#penVeil .pen-cancel{
+  appearance:none; margin-top:4px;
+  padding:8px 18px; border-radius:9px;
+  border:1px solid rgba(90,90,90,.28);
+  background:rgba(255,255,255,.55); color:var(--ink-2);
+  font-size:13px; font-weight:650; cursor:pointer;
+}
+#penVeil .pen-cancel:hover{ background:rgba(255,255,255,.85); }
 @keyframes breathe{
   0%,100%{ opacity:.45; }
   50%{ opacity:.95; }

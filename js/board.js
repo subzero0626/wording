@@ -10,7 +10,7 @@ G.board = (function () {
   var playEl, layerEl, fxEl, boardEl;
   var ents = [];
   var byId = {};
-  var W = 800, H = 600;
+  var W = 0, H = 0;
 
   /* ------------------------------------------------------------------
      초기화 / 레이아웃
@@ -55,23 +55,37 @@ G.board = (function () {
     var a = available();
     var s = C.EXPAND_SCALE[Math.min(G.state.expandLevel, C.EXPAND_SCALE.length - 1)];
     var nw = Math.round(a.w * s), nh = Math.round(a.h * s);
+    var prevW = W, prevH = H;
     var dw = nw - W, dh = nh - H;
 
     W = nw; H = nh;
+    /* 확장 구매만 크기 애니 — 초기/리사이즈는 즉시 적용 */
+    if (animateShift) playEl.classList.add('anim-size');
+    else playEl.classList.remove('anim-size');
     playEl.style.width = W + 'px';
     playEl.style.height = H + 'px';
     G.fx.resize(W, H);
 
-    /* 중앙 기준으로 커지므로 기존 오브젝트를 시각적으로 제자리에 둔다 */
-    if (animateShift && (dw || dh)) {
-      for (var i = 0; i < ents.length; i++) {
-        ents[i].x += dw / 2;
-        ents[i].y += dh / 2;
+    if (ents.length && prevW > 0 && prevH > 0 && (dw || dh)) {
+      if (animateShift) {
+        /* 확장 구매 — 가운데 기준으로 커지므로 시각적 자리 유지 */
+        for (var i = 0; i < ents.length; i++) {
+          ents[i].x += dw / 2;
+          ents[i].y += dh / 2;
+        }
+      } else {
+        /* 창 크기·스케일 변화 — 비율로 자리를 맞춘다 */
+        var sx = nw / prevW, sy = nh / prevH;
+        for (var k = 0; k < ents.length; k++) {
+          ents[k].x *= sx;
+          ents[k].y *= sy;
+        }
       }
     }
     for (var j = 0; j < ents.length; j++) {
       var p = clampPoint(ents[j].x, ents[j].y, ents[j]);
       ents[j].x = p.x; ents[j].y = p.y;
+      ents[j].render();
     }
   }
 

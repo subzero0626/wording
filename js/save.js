@@ -38,10 +38,13 @@ G.save = (function () {
   }
 
   function serialize() {
+    var sz = G.board.size();
     var ents = G.board.all().map(function (e) { return e.toJSON(); });
     return {
       state: G.state,
       ents: ents,
+      boardW: sz.w,
+      boardH: sz.h,
       uid: G.util.currentUid(),
       t: Date.now()
     };
@@ -75,14 +78,17 @@ G.save = (function () {
     try { localStorage.removeItem(KEY); } catch (err) { }
   }
 
-  /** 저장된 오브젝트를 보드에 복원 */
-  function restoreEntities(list) {
+  /** 저장된 오브젝트를 보드에 복원. 예전 놀이영역 크기가 있으면 비율로 맞춘다 */
+  function restoreEntities(list, boardW, boardH) {
     if (!list) return;
+    var sz = G.board.size();
+    var sx = (boardW > 0) ? sz.w / boardW : 1;
+    var sy = (boardH > 0) ? sz.h / boardH : 1;
     for (var i = 0; i < list.length; i++) {
       var d = list[i];
       if (d.type === 'word' && d.text === 'WALL') d.text = 'ROCK';  // 이름만 바뀜
       if (d.type === 'word' && !G.lookupWord(d.text)) continue;
-      var e = new G.Entity(d.type, d.text, d.x, d.y);
+      var e = new G.Entity(d.type, d.text, d.x * sx, d.y * sy);
       e.data = d.data || {};
       e.age = d.age || 0;
       G.board.add(e);

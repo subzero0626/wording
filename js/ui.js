@@ -49,6 +49,14 @@ G.ui = (function () {
     elIntro = document.getElementById('intro');
 
     window.addEventListener('keydown', onPenKey);
+    buildPenKeys();
+    document.getElementById('penCancel').addEventListener('click', function (ev) {
+      ev.preventDefault();
+      cancelPenPick();
+    });
+    /* 배경 탭은 무시 — 키/취소만 동작 */
+    elPenVeil.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+    elPenVeil.addEventListener('click', function (ev) { ev.stopPropagation(); });
 
     /* --- 생성 게이지 / 업그레이드 팝오버 --- */
     elGauge.addEventListener('click', function (ev) {
@@ -199,17 +207,15 @@ G.ui = (function () {
   /** @param small 낱글자처럼 잦은 지급은 작고 옅게 */
   function floatMoney(x, y, amount, small) {
     if (!G.state.opt.fx && small) return;
-    var scr = U.playToScreen(playEl, x, y - 20);
-    var loc = U.screenToApp(scr.x, scr.y);
     var d = document.createElement('div');
     d.className = 'float-money' + (small ? ' small' : '');
     var neg = amount < 0;
     d.textContent = (neg ? '-' : '+') + U.num(Math.abs(amount));   // 단위 없이 숫자만
     if (neg) d.style.color = '#b4544a';
-    d.style.left = loc.x + 'px';
-    d.style.top = loc.y + 'px';
-    d.style.transform = 'translateX(-50%)';
-    appEl.appendChild(d);
+    /* 놀이영역 로컬 좌표에 그대로 둔다 — #app scale 변환을 타면 위치가 어긋난다 */
+    d.style.left = x + 'px';
+    d.style.top = (y - 20) + 'px';
+    playEl.appendChild(d);
     setTimeout(function () { if (d.parentNode) d.parentNode.removeChild(d); }, 1150);
     if (!neg && !small) bumpMoney();
   }
@@ -738,8 +744,26 @@ G.ui = (function () {
 
   /**
    * PEN 을 버렸을 때 — 원하는 알파벳 하나를 고른다.
-   * Esc 로 취소하면 펜을 보드에 되돌려 준다 (자리가 있을 때).
+   * Esc/취소면 펜을 보드에 되돌려 준다 (자리가 있을 때).
    */
+  function buildPenKeys() {
+    var box = document.getElementById('penKeys');
+    if (!box || box.childNodes.length) return;
+    for (var i = 0; i < 26; i++) {
+      var ch = String.fromCharCode(65 + i);
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pen-key';
+      b.textContent = ch;
+      b.setAttribute('data-ch', ch);
+      b.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        pickPenLetter(this.getAttribute('data-ch'));
+      });
+      box.appendChild(b);
+    }
+  }
+
   function openPenPick() {
     if (!elPenVeil) return;
     penPicking = true;
@@ -752,22 +776,21 @@ G.ui = (function () {
     if (elPenVeil) elPenVeil.classList.add('hidden');
   }
 
-  function onPenKey(ev) {
+  function cancelPenPick() {
     if (!penPicking) return;
-    if (ev.key === 'Escape') {
-      ev.preventDefault();
-      closePenPick();
-      if (G.board.count() < G.maxEntities()) {
-        G.board.makeWord('PEN', playEl.clientWidth / 2, playEl.clientHeight / 2);
-        toast('<b>PEN</b> 을 되돌렸다');
-        return;
-      }
-      G.ui.toast('자리가 없어 <b>PEN</b> 을 되돌리지 못했다');
+    closePenPick();
+    if (G.board.count() < G.maxEntities()) {
+      G.board.makeWord('PEN', playEl.clientWidth / 2, playEl.clientHeight / 2);
+      toast('<b>PEN</b> 을 되돌렸다');
       return;
     }
-    var ch = (ev.key || '').toUpperCase();
+    toast('자리가 없어 <b>PEN</b> 을 되돌리지 못했다');
+  }
+
+  function pickPenLetter(ch) {
+    if (!penPicking) return;
+    ch = (ch || '').toUpperCase();
     if (!/^[A-Z]$/.test(ch)) return;
-    ev.preventDefault();
     if (G.board.count() >= G.maxEntities()) {
       toast('보드가 가득 차 있다');
       return;
@@ -776,6 +799,19 @@ G.ui = (function () {
     var L = G.board.spawnLetter(ch);
     G.fx.burst(L.x, L.y, '90,120,160', 16, 90);
     toast('<b>' + ch + '</b> 를 얻었다');
+  }
+
+  function onPenKey(ev) {
+    if (!penPicking) return;
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      cancelPenPick();
+      return;
+    }
+    var ch = (ev.key || '').toUpperCase();
+    if (!/^[A-Z]$/.test(ch)) return;
+    ev.preventDefault();
+    pickPenLetter(ch);
   }
 
   function syncOptions() {

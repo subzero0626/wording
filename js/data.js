@@ -756,7 +756,7 @@ G.WORDS = [
   },
   {
     id: 'PEN', kind: '사물', tags: [],
-    desc: '보드 밖으로 버리면 원하는 글자 하나를 고를 수 있다. 보드가 가득이면 버릴 수 없다.',
+    desc: '보드 밖으로 버리면 원하는 글자 하나를 고를 수 있다.',
     hint: '쓴다',
     color: { fg: '#3d5a80', bd: '#b7c9de' },
     anim: 'still', fx: null,
@@ -1005,7 +1005,7 @@ G.DETAIL = (function () {
     CRAFT: '같은 글자 둘을 합친 것(AA · BB …)을 CRAFT 에 ' + C.DEVICE_HOLD +
       '초 올리면, 넣은 글자를 제외한 랜덤 글자 둘로 바꾼다.',
     HOUSE: '글자 최대 보유가 +' + C.HOUSE_ROOM + '개.',
-    PEN: '보드 밖으로 버리면 원하는 알파벳 하나를 고른다. 보드가 가득 차 있으면 버릴 수 없다.',
+    PEN: '보드 밖으로 버리면 원하는 알파벳 하나를 고른다.',
     CLOCK: '세워 두면 생성 간격 −' + C.CLOCK_CUT + '초 (바닥 ' + C.SPAWN_FLOOR + '초).',
     TIME: '팔면 생성 간격 −' + C.TIME_CUT + '초 (바닥 ' + C.SPAWN_FLOOR + '초).'
   };
