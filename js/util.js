@@ -82,6 +82,14 @@ G.util = (function () {
     return Math.max(0, Math.ceil(v)) + '초';
   }
 
+  /** 누적 플레이 시간(초) → "H:MM" (분은 두 자리) */
+  function playTime(sec) {
+    var s = Math.max(0, Math.floor(sec || 0));
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    return h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
   /**
    * 배수 → 증감 % 표기. ×1.25 는 +25%, ×0.7 은 −30%.
    * 게임 안 숫자는 전부 이 형식으로 읽힌다.
@@ -122,7 +130,7 @@ G.util = (function () {
     clamp: clamp, lerp: lerp, rand: rand, randInt: randInt, pick: pick, chance: chance,
     dist: dist, dist2: dist2, weightedPick: weightedPick,
     uid: uid, seedUid: seedUid, currentUid: currentUid,
-    num: num, money: money, secs: secs, mul: mul, pct: pct, overlap: overlap,
+    num: num, money: money, secs: secs, playTime: playTime, mul: mul, pct: pct, overlap: overlap,
     easeOutCubic: easeOutCubic, easeInOut: easeInOut, el: el,
     appScale: appScale, screenToApp: screenToApp,
     screenToPlay: screenToPlay, playToScreen: playToScreen

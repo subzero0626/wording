@@ -331,6 +331,7 @@ G.ui = (function () {
   function renderStatsPop() {
     if (!elStatsPop || elStatsPop.classList.contains('hidden')) return;
     var perMin = Math.round(G.board.payRate() * (60 / C.PAY_PERIOD));
+    elStatsPop.querySelector('.st-play').textContent = U.playTime(G.state.playTime || 0);
     elStatsPop.querySelector('.st-rate').textContent = U.money(perMin);
     elStatsPop.querySelector('.st-total').textContent = U.money(G.state.totalEarned || 0);
     elStatsPop.querySelector('.st-spent').textContent = U.money(G.state.totalSpent || 0);

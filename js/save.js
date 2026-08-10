@@ -19,6 +19,7 @@ G.save = (function () {
       money: 0,
       totalEarned: 0,
       totalSpent: 0,
+      playTime: 0,           // 실제로 보드가 돌아가던 누적 초 (방치·일시정지 제외)
       spawnLevel: 0,
       expandLevel: 0,
       spawnTimer: G.C.SPAWN_STEPS[0],

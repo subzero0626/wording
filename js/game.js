@@ -154,6 +154,7 @@ G.game = (function () {
       idleAcc += dt;
       if (idleAcc >= C.IDLE_AFTER) { sleepBoard(false); return; }
 
+      G.state.playTime = (G.state.playTime || 0) + dt;
       stepSpawn(dt);
       G.drag.tick(dt);
       G.board.step(dt);
