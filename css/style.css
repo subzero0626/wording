@@ -92,12 +92,12 @@ button{
 
 #skin{
   position:absolute; inset:0; pointer-events:none; z-index:1;
-  border-radius:inherit; display:block;
+  border-radius:inherit; display:block; overflow:hidden;
 }
 #skin.hidden{ display:none; }
 #skinSpace{
   position:absolute; inset:0; pointer-events:none; z-index:1;
-  border-radius:inherit; display:block;
+  border-radius:inherit; display:block; overflow:hidden;
 }
 #skinSpace.hidden{ display:none; }
 #fx{ position:absolute; inset:0; pointer-events:none; z-index:2; }
@@ -106,7 +106,6 @@ button{
 /* 해변 스킨 — 보드 배경을 투명히, 모서리는 스킨이 채움 */
 #play.skin-beach{
   background:transparent;
-  overflow:hidden;
   border-color:rgba(160, 140, 120, .28);
   box-shadow:
     0 1px 0 rgba(255,255,255,.7) inset,
@@ -130,7 +129,6 @@ button{
 /* 우주 스킨 */
 #play.skin-space{
   background:transparent;
-  overflow:hidden;
   border-color:rgba(80, 90, 120, .35);
   box-shadow:
     0 1px 0 rgba(255,255,255,.25) inset,
