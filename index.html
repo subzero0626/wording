@@ -17,6 +17,8 @@
   <div id="board">
     <!-- 실제 사용 가능한 놀이 영역 (확장됨) -->
     <div id="play">
+      <canvas id="skin" aria-hidden="true"></canvas>
+      <canvas id="skinSpace" aria-hidden="true"></canvas>
       <canvas id="fx"></canvas>
       <div id="layer"></div>
       <div id="snapline"></div>
@@ -85,6 +87,18 @@
     <footer>보드에서 글자를 끌어다 붙이면 단어가 됩니다.</footer>
   </aside>
 
+  <!-- 우측: 스킨 탭 -->
+  <div id="skinTab" role="button" aria-label="스킨 열기"></div>
+  <aside id="skins">
+    <header>
+      <h2>스킨</h2>
+      <span id="skinsCount">0 / 0</span>
+      <button id="skinsClose" aria-label="닫기">✕</button>
+    </header>
+    <div id="skinsList"></div>
+    <footer>보드 배경을 고르거나 구매합니다.</footer>
+  </aside>
+
   <!-- 일시정지 = 설정 화면 -->
   <div id="pauseVeil" class="hidden">
     <div class="pcard">
@@ -106,6 +120,11 @@
         <label class="prow">
           <span class="prow-t">조합 가이드<em>붙이면 무슨 단어가 되는지 미리 보여 줍니다</em></span>
           <input type="checkbox" id="optSnapHint" checked>
+          <i class="sw"></i>
+        </label>
+        <label class="prow">
+          <span class="prow-t">스킨 상호작용<em>밀물 · 소행성 등이 글자를 밈</em></span>
+          <input type="checkbox" id="optSkinInteract" checked>
           <i class="sw"></i>
         </label>
       </div>
@@ -180,6 +199,7 @@
 <script src="js/defs.js"></script>
 <script src="js/data.js"></script>
 <script src="js/fx.js"></script>
+<script src="js/skin.js"></script>
 <script src="js/sfx.js"></script>
 <script src="js/entity.js"></script>
 <script src="js/board.js"></script>

@@ -25,7 +25,12 @@ G.board = (function () {
     layerEl = document.getElementById('layer');
     fxEl = document.getElementById('fx');
     G.fx.init(fxEl);
-    layout();
+    if (G.skin) {
+      G.skin.init(
+        document.getElementById('skin'),
+        document.getElementById('skinSpace')
+      );
+    }    layout();
     var resizeT = 0;
     window.addEventListener('resize', function () {
       clearTimeout(resizeT);
@@ -66,6 +71,7 @@ G.board = (function () {
     playEl.style.width = W + 'px';
     playEl.style.height = H + 'px';
     G.fx.resize(W, H);
+    if (G.skin) G.skin.resize(W, H);
   }
 
   /**
@@ -92,6 +98,7 @@ G.board = (function () {
     playEl.style.width = W + 'px';
     playEl.style.height = H + 'px';
     G.fx.resize(W, H);
+    if (G.skin) G.skin.resize(W, H);
 
     if (hard) return;
 
@@ -361,6 +368,9 @@ G.board = (function () {
 
     /* 2. 단어 행동 + 상호작용 */
     G.behaviors.step(dt);
+
+    /* 2.5 해변 스킨 — 바다 낱글자 밀물 */
+    if (G.skin && G.skin.step) G.skin.step(dt, ents, W, H);
 
     /* 3. 개별 업데이트 */
     for (i = 0; i < ents.length; i++) ents[i].update(dt);

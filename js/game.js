@@ -13,6 +13,7 @@ G.game = (function () {
   var awayAt = 0;         // 보드를 재운 시각 (0 이면 돌아가는 중)
   var awayByHide = false; // 탭을 떠나서 잠든 것인가 (아니면 손을 놓아서)
   var idleAcc = 0;        // 마지막 조작 이후 흐른 시간
+  var bootReady = false;  // 세이브 복원 전엔 소환·동결 해제 금지
 
   /* ------------------------------------------------------------------
      초기화
@@ -29,6 +30,7 @@ G.game = (function () {
       if (G.state.opt.fx === undefined) G.state.opt.fx = true;
       if (G.state.opt.sfx === undefined) G.state.opt.sfx = true;
       if (G.state.opt.snapHint === undefined) G.state.opt.snapHint = true;
+      if (G.state.opt.skinInteract === undefined) G.state.opt.skinInteract = true;
       /* 예전에 인트로만 본 세이브는 튜토리얼을 강제하지 않는다 */
       if (s.tutorialDone === undefined) G.state.tutorialDone = !!s.introDone;
       /* WALL → ROCK 이름만 바뀜 — 발견한 기록도 이어받는다 */
@@ -44,10 +46,16 @@ G.game = (function () {
         G.state.hints.ROCK = G.state.hints.WALL;
         delete G.state.hints.WALL;
       }
+      /* 스킨 필드가 없던 세이브 — 개발 중 해변을 쓰던 유저는 해변 소유로 이어받음 */
+      if (s.skinsOwned === undefined && s.skinId === undefined) {
+        G.state.skinsOwned = { plain: true, beach: true };
+        G.state.skinId = 'beach';
+      }
       G.util.seedUid(saved.uid || 0);
     }
 
     G.board.init();
+    if (G.skin) G.skin.syncFromState();
     G.tokens.init();
     G.drag.init();
     G.ui.init();
@@ -73,13 +81,14 @@ G.game = (function () {
       } else {
         seedBoard();
       }
+      bootReady = true;
       requestAnimationFrame(function () {
         G.board.releaseClamp();
         if (!G.state.tutorialDone) G.ui.showTutorial(false);
       });
       /* rAF 가 빠지거나 예외로 동결이 남는 경우 대비 */
       setTimeout(function () {
-        if (G.board.isClampFrozen && G.board.isClampFrozen()) G.board.releaseClamp();
+        if (bootReady && G.board.isClampFrozen && G.board.isClampFrozen()) G.board.releaseClamp();
       }, 2500);
     });
 
@@ -151,7 +160,8 @@ G.game = (function () {
     awayByHide = false;
 
     try { G.drag.cancel(); } catch (err) { }
-    if (G.board && G.board.isClampFrozen && G.board.isClampFrozen()) {
+    /* 부팅 복원 전에는 동결을 풀지 않는다 — 빈 보드에 게이지 0 소환이 나던 원인 */
+    if (bootReady && G.board && G.board.isClampFrozen && G.board.isClampFrozen()) {
       G.board.releaseClamp();
     }
     if (G.ui && G.ui.forceClosePen) G.ui.forceClosePen();
@@ -221,6 +231,7 @@ G.game = (function () {
         }
       }
     }
+    if (G.skin) G.skin.render();
     G.fx.render();
     G.ui.tick();
   }
@@ -249,6 +260,7 @@ G.game = (function () {
   }
 
   function stepSpawn(dt) {
+    if (!bootReady) return;
     /* 시계를 새로 세우면 지금 기다리는 것부터 짧아진다.
        다음 글자부터 적용하면 세워 놓고도 아무 일이 없는 것처럼 보인다 */
     var iv = spawnInterval();

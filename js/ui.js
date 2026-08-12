@@ -11,6 +11,7 @@ G.ui = (function () {
   var elMoney, elMoneyVal, elGauge, elGaugeBar, elGaugeText, elSpawnPop, elWordPop,
     elBoardCount, elCountNum, elCountMax, elStatsPop, elCodexShop, elTicketBuys,
     elCodex, elCodexTab, elCodexList, elCodexCount, elCodexTickets, elCodexFoot,
+    elSkins, elSkinTab, elSkinsList, elSkinsCount,
     elChip, elToasts, elPauseVeil, elIdleVeil, elPenVeil, elTutVeil, playEl, appEl;
 
   var penPicking = false;
@@ -43,6 +44,10 @@ G.ui = (function () {
     elCodexFoot = document.querySelector('#codex footer');
     elCodexShop = document.getElementById('codexShop');
     elTicketBuys = elCodexShop.querySelector('.tk-buys');
+    elSkins = document.getElementById('skins');
+    elSkinTab = document.getElementById('skinTab');
+    elSkinsList = document.getElementById('skinsList');
+    elSkinsCount = document.getElementById('skinsCount');
     elStatsPop = document.getElementById('statsPop');
     elChip = document.getElementById('expandChip');
     elToasts = document.getElementById('toasts');
@@ -108,12 +113,22 @@ G.ui = (function () {
     });
     elCodex.addEventListener('pointerdown', function (ev) {
       ev.stopPropagation();
-      /* 도감 안이어도 힌트권 창·버튼 밖이면 구매창을 닫는다 */
       if (!elCodexShop.classList.contains('hidden') &&
         !(ev.target.closest && ev.target.closest('#codexShop, #codexTickets'))) {
         elCodexShop.classList.add('hidden');
       }
     });
+
+    /* --- 스킨: 오른쪽 손잡이 --- */
+    elSkinTab.addEventListener('pointerdown', onSkinGrab);
+    window.addEventListener('pointermove', onSkinDrag);
+    window.addEventListener('pointerup', endSkinDrag);
+    window.addEventListener('pointercancel', endSkinDrag);
+    document.getElementById('skinsClose').addEventListener('click', function (ev) {
+      ev.stopPropagation(); toggleSkins(false);
+    });
+    elSkins.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+    elSkinsList.addEventListener('click', onSkinClick);
 
     /* --- 확장 칩: 보드 가장자리에 마우스가 가면 살짝 나타난다 --- */
     document.addEventListener('pointermove', onPointerMove);
@@ -142,6 +157,9 @@ G.ui = (function () {
     });
     document.getElementById('optSnapHint').addEventListener('change', function () {
       G.state.opt.snapHint = this.checked;
+    });
+    document.getElementById('optSkinInteract').addEventListener('change', function () {
+      G.state.opt.skinInteract = this.checked;
     });
     document.getElementById('resetBtn').addEventListener('click', function (ev) {
       ev.stopPropagation();
@@ -180,7 +198,7 @@ G.ui = (function () {
       if (ev.key === 'Escape') {
         if (tutOpen) { hideTutorial(); return; }
         if (G.game.paused) { G.game.setPaused(false); return; }
-        closePopovers(); toggleCodex(false);
+        closePopovers(); toggleCodex(false); toggleSkins(false);
       }
       if (ev.key === ' ' && ev.target === document.body) {
         if (tutOpen) return;
@@ -189,6 +207,7 @@ G.ui = (function () {
     });
 
     renderCodex();
+    renderSkins();
   }
 
   /* ------------------------------------------------------------------
@@ -199,6 +218,7 @@ G.ui = (function () {
     if (m !== lastMoneyShown) {
       lastMoneyShown = m;
       elMoneyVal.textContent = U.num(m);
+      if (elSkins && elSkins.classList.contains('open')) renderSkins();
     }
     var n = G.board.count(), max = G.maxEntities(), full = n >= max;
     if (n !== lastCountShown || max !== lastMaxShown) {
@@ -247,7 +267,7 @@ G.ui = (function () {
     }
     var t = ev.target;
     if (t && t.closest) {
-      if (t.closest('.ent, #gauge, #money, #pauseBtn, #pauseVeil, #tutVeil, #penVeil, #idleVeil, #codex, #codexTab, #codexShop, #spawnPop, #statsPop, #wordPop, #expandChip, #toasts, button, input, a, label')) {
+      if (t.closest('.ent, #gauge, #money, #pauseBtn, #pauseVeil, #tutVeil, #penVeil, #idleVeil, #codex, #codexTab, #codexShop, #skins, #skinTab, #spawnPop, #statsPop, #wordPop, #expandChip, #toasts, button, input, a, label')) {
         return;
       }
     }
@@ -558,9 +578,9 @@ G.ui = (function () {
 
   /** 보드(놀이영역) 가장자리 근처에서만 확장 칩을 보여준다 (드래그 중에는 방해하지 않는다) */
   function onPointerMove(ev) {
-    if (G.game.paused || G.drag.current || cdOn) { hideChip(); return; }
+    if (G.game.paused || G.drag.current || cdOn || skOn) { hideChip(); return; }
     if (ev.target && ev.target.closest &&
-      ev.target.closest('#gauge,#money,#codexTab,#codex,#pauseBtn,.pop,.token')) {
+      ev.target.closest('#gauge,#money,#codexTab,#codex,#skinTab,#skins,#pauseBtn,.pop,.token')) {
       hideChip(); return;
     }
     var r = playEl.getBoundingClientRect();
@@ -647,6 +667,7 @@ G.ui = (function () {
      ------------------------------------------------------------------ */
   function toggleCodex(open) {
     if (open === undefined) open = !elCodex.classList.contains('open');
+    if (open) toggleSkins(false);
     elCodex.classList.toggle('open', open);
     elCodexTab.classList.toggle('open', open);
     if (open) renderCodex();
@@ -694,6 +715,118 @@ G.ui = (function () {
     elCodexTab.style.transform = '';
     /* 끌지 않고 눌렀다 떼면 그냥 토글, 끌었다면 놓은 위치로 결정한다 */
     toggleCodex(cdMoved ? (cdX > cdW * (cdOpen ? 0.65 : 0.28)) : !cdOpen);
+  }
+
+  /* ------------------------------------------------------------------
+     스킨 (우측 서랍)
+     ------------------------------------------------------------------ */
+  function toggleSkins(open) {
+    if (!elSkins) return;
+    if (open === undefined) open = !elSkins.classList.contains('open');
+    if (open) toggleCodex(false);
+    elSkins.classList.toggle('open', open);
+    elSkinTab.classList.toggle('open', open);
+    if (open) renderSkins();
+  }
+
+  var skW = 0, skFrom = 0, skX = 0, skOpen = false, skOn = false, skMoved = false;
+
+  function onSkinGrab(ev) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    skOpen = elSkins.classList.contains('open');
+    skW = elSkins.offsetWidth;
+    skFrom = ev.clientX;
+    skX = skOpen ? skW : 0;
+    skOn = true;
+    skMoved = false;
+    if (!skOpen) renderSkins();
+    if (elSkinTab.setPointerCapture) elSkinTab.setPointerCapture(ev.pointerId);
+    elSkins.classList.add('dragging');
+    elSkinTab.classList.add('dragging');
+  }
+
+  function onSkinDrag(ev) {
+    if (!skOn) return;
+    /* 오른쪽 서랍: 왼쪽으로 끌수록 열림 */
+    var d = (skFrom - ev.clientX) / U.appScale();
+    if (Math.abs(d) > 3) skMoved = true;
+    skX = U.clamp((skOpen ? skW : 0) + d, 0, skW);
+    elSkins.style.transform = 'translateX(calc(100% - ' + skX.toFixed(1) + 'px))';
+    elSkinTab.style.transform = 'translate(' + (-skX).toFixed(1) + 'px,-50%)';
+  }
+
+  function endSkinDrag(ev) {
+    if (!skOn) return;
+    skOn = false;
+    try {
+      if (ev && ev.pointerId != null && elSkinTab.releasePointerCapture) {
+        elSkinTab.releasePointerCapture(ev.pointerId);
+      }
+    } catch (err) { }
+    elSkins.classList.remove('dragging');
+    elSkinTab.classList.remove('dragging');
+    elSkins.style.transform = '';
+    elSkinTab.style.transform = '';
+    toggleSkins(skMoved ? (skX > skW * (skOpen ? 0.65 : 0.28)) : !skOpen);
+  }
+
+  function renderSkins() {
+    if (!elSkinsList || !G.skin) return;
+    G.skin.ensureState();
+    var list = G.SKINS || [];
+    var ownedN = 0;
+    var html = '';
+    var cur = G.state.skinId || 'plain';
+    for (var i = 0; i < list.length; i++) {
+      var sk = list[i];
+      var got = G.skin.owned(sk.id);
+      if (got) ownedN++;
+      var on = cur === sk.id;
+      var poor = !got && sk.cost > 0 && G.state.money < sk.cost;
+      html += '<div class="sk' + (got ? '' : ' locked') + (on ? ' active' : '') +
+        (poor ? ' poor' : '') + '" data-id="' + sk.id + '">';
+      html += '<div class="sk-preview sk-preview-' + sk.id + '"></div>';
+      html += '<div class="sk-mid"><div class="n">' + sk.name + '</div>';
+      html += '<div class="d">' + sk.desc + '</div></div>';
+      if (on) html += '<div class="sk-act">사용 중</div>';
+      else if (got) html += '<div class="sk-act">선택</div>';
+      else if (sk.cost <= 0) html += '<div class="sk-act">무료</div>';
+      else html += '<div class="sk-act">' + sk.cost + 'w</div>';
+      html += '</div>';
+    }
+    elSkinsList.innerHTML = html;
+    if (elSkinsCount) elSkinsCount.textContent = ownedN + ' / ' + list.length;
+  }
+
+  function onSkinClick(ev) {
+    var row = ev.target.closest && ev.target.closest('.sk');
+    if (!row) return;
+    ev.stopPropagation();
+    var sid = row.getAttribute('data-id');
+    if (!sid || !G.skin) return;
+    if (G.skin.owned(sid)) {
+      if (G.skin.select(sid)) {
+        toast(G.skin.catalog().filter(function (s) { return s.id === sid; })[0].name + ' 스킨');
+        renderSkins();
+        G.save.write();
+      }
+      return;
+    }
+    var sk = null;
+    var cat = G.SKINS;
+    for (var i = 0; i < cat.length; i++) if (cat[i].id === sid) sk = cat[i];
+    if (!sk) return;
+    if (G.state.money < sk.cost) {
+      toast((sk.cost - Math.floor(G.state.money)) + 'w 더 필요하다');
+      renderSkins();
+      return;
+    }
+    if (G.skin.buy(sid)) {
+      toast(sk.name + ' 스킨을 샀다');
+      renderSkins();
+      G.save.write();
+    }
   }
 
   /* 설명 안에 나오는 다른 능력 단어 이름은, 아직 못 찾았다면 가려 준다.
@@ -1002,6 +1135,7 @@ G.ui = (function () {
     document.getElementById('optFx').checked = G.state.opt.fx;
     document.getElementById('optSfx').checked = G.state.opt.sfx !== false;
     document.getElementById('optSnapHint').checked = G.state.opt.snapHint;
+    document.getElementById('optSkinInteract').checked = G.state.opt.skinInteract !== false;
   }
 
   return {
@@ -1009,6 +1143,7 @@ G.ui = (function () {
     flashGaugeNudge: flashGaugeNudge,
     closePopovers: closePopovers, showWordPop: showWordPop,
     renderCodex: renderCodex, toggleCodex: toggleCodex,
+    renderSkins: renderSkins, toggleSkins: toggleSkins,
     setPausedUI: setPausedUI, setIdleUI: setIdleUI,
     openPenPick: openPenPick, closePenPick: closePenPick,
     forceClosePen: forceClosePen,

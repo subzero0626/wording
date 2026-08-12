@@ -32,9 +32,11 @@ G.save = (function () {
       hints: {},
       tickets: 0,            // 손에 든 힌트권
       ticketsBought: 0,      // 지금까지 산 총 장수 — 다음 장 값이 여기서 나온다
-      opt: { fx: true, sfx: true, snapHint: true },
+      opt: { fx: true, sfx: true, snapHint: true, skinInteract: true },
       introDone: false,
       tutorialDone: false,
+      skinsOwned: { plain: true },
+      skinId: 'plain',
       lastTime: Date.now()
     };
   }

@@ -22,6 +22,7 @@ G.drag = (function () {
   var devT = 0;            // 장치 위에 대고 있은 시간
   var snapEl, hintEl, playEl, layerEl;
   var pointerId = null;
+  var flickHist = []; /* 우주 스킨 컬링용 {t,x,y} */
 
   function init() {
     playEl = document.getElementById('play');
@@ -115,6 +116,7 @@ G.drag = (function () {
     e.hop = 0;
     e.vx = 0; e.vy = 0;
     e.heldBy = null;
+    flickHist = [{ t: performance.now(), x: e.x, y: e.y }];
     if (e.el) {
       e.el.classList.add('drag');
       e.el._dragPointerId = ev.pointerId;
@@ -155,6 +157,7 @@ G.drag = (function () {
       cur.y = inside.y + outY * k;
       clearSnap();
       cur.render();
+      noteFlickSample();
       return;
     }
 
@@ -169,6 +172,79 @@ G.drag = (function () {
     cur.x = c.x; cur.y = c.y;
     cur.render();
     if (dev) paintDevice(); else paintSnap();
+    noteFlickSample();
+  }
+
+  function noteFlickSample() {
+    if (!cur) return;
+    var now = performance.now();
+    var last = flickHist[flickHist.length - 1];
+    /* 같은 자리면 그래도 시간만 갱신해 정지 판정에 쓴다 */
+    if (last && Math.abs(last.x - cur.x) < 0.5 && Math.abs(last.y - cur.y) < 0.5) {
+      last.t = now;
+      last.still = (last.still || 0) + 1;
+      return;
+    }
+    flickHist.push({ t: now, x: cur.x, y: cur.y, still: 0 });
+    while (flickHist.length > 16 || (flickHist.length > 2 && now - flickHist[0].t > 180)) {
+      flickHist.shift();
+    }
+  }
+
+  /**
+   * 우주 스킨 — 던지듯 손을 뗄 때만 미끄러짐.
+   * 끝에서 가만히 멈춘 뒤 놓으면 속도 없음.
+   */
+  function applySpaceFlick(e) {
+    e.vx = 0;
+    e.vy = 0;
+    if (!G.skin || G.skin.id() !== 'space') return;
+    if (G.skin.interactOn && !G.skin.interactOn()) return;
+    if (!flickHist || flickHist.length < 2) return;
+
+    var b = flickHist[flickHist.length - 1];
+    /* 놓기 직전 ~70ms 안 움직임이면 던진 게 아님 */
+    var movedRecently = false;
+    var i;
+    for (i = flickHist.length - 1; i >= 0; i--) {
+      var s = flickHist[i];
+      if (b.t - s.t > 70) break;
+      if (Math.abs(s.x - b.x) > 3 || Math.abs(s.y - b.y) > 3) {
+        movedRecently = true;
+        break;
+      }
+    }
+    if (!movedRecently) return;
+
+    /* 마지막 ~50ms 구간 속도만 사용 */
+    var a = null;
+    for (i = flickHist.length - 2; i >= 0; i--) {
+      if (b.t - flickHist[i].t >= 45) {
+        a = flickHist[i];
+        break;
+      }
+    }
+    if (!a) a = flickHist[0];
+    var dt = (b.t - a.t) / 1000;
+    if (!(dt > 0.018)) return;
+
+    var vx = (b.x - a.x) / dt;
+    var vy = (b.y - a.y) / dt;
+    var letters = Math.max(1, (e.text && e.text.length) || 1);
+    var mul = 0.55 / letters;
+    vx *= mul;
+    vy *= mul;
+    var spd = Math.sqrt(vx * vx + vy * vy);
+    /* 던지는 최저 속도 — 이하면 착지만 */
+    if (spd < 120) return;
+    var cap = 220;
+    if (spd > cap) {
+      vx *= cap / spd;
+      vy *= cap / spd;
+    }
+    e.vx = vx;
+    e.vy = vy;
+    e.heldBy = null;
   }
 
   /* ------------------------------------------------------------------
@@ -406,8 +482,10 @@ G.drag = (function () {
     if (s && s.armed !== false && moved && G.board.get(s.target.id)) {
       doSnap(e, s);
     } else if (moved) {
-      e.land();
+      applySpaceFlick(e);
+      if (!(e.vx || e.vy)) e.land();
     }
+    flickHist = [];
   }
 
   /* ------------------------------------------------------------------
